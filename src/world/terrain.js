@@ -65,7 +65,19 @@ class MinHeap {
   }
 }
 
-export function generateTerrain(N, seed) {
+// How high the land round a new village stands (RELIEF, the new village's
+// choice): gentle, a valley with a hill or two; hilly, the valley floor
+// ringed by highland behind steep escarpments, broken by a few gentler
+// slopes where a road can climb; mountains, the same higher, a second tier
+// further out and peaks on it. Rivers cut gorges through it all. The
+// founding streets stay on the valley floor.
+export const RELIEF = {
+  gentle: null,
+  hilly: { h1: [2.3, 3.1], tiers: 1, r0: 0.3, peaks: 0 },
+  mountains: { h1: [3.4, 4.4], tiers: 2, h2: [2.2, 3], r0: 0.26, peaks: 3 },
+};
+
+export function generateTerrain(N, seed, relief = 'gentle') {
   const S = N + 1;
   const H = new Float32Array(S * S);
   const rng = new RNG(seed ^ 0x5bd1e995);
@@ -97,11 +109,40 @@ export function generateTerrain(N, seed) {
   const lakeZ = N / 2 + Math.sin(lakeAng) * N * 0.3;
   const lakeR = rng.float(3, 5.5);
 
+  // the highland round the valley (its own stream of numbers, so a gentle
+  // valley is the same as ever)
+  const R = RELIEF[relief] || null, nD = makeNoise2D(seed + 303), rr = new RNG(seed ^ 0x2545f491);
+  const hi = R && {
+    h1: rr.float(...R.h1), h2: R.h2 ? rr.float(...R.h2) : 0,
+    // which way the land rises most, and how much nearer the valley's edge is that side
+    side: rr.float(0, Math.PI * 2), lean: rr.float(0.4, 1),
+    peaks: Array.from({ length: R.peaks }, () => {
+      const a = rr.float(0, Math.PI * 2), d = rr.float(0.36, 0.46) * N;
+      return { x: N / 2 + Math.cos(a) * d, z: N / 2 + Math.sin(a) * d, r: rr.float(4, 7), h: rr.float(1.4, 2.8) };
+    }),
+  };
+
   for (let cz = 0; cz < S; cz++) {
     for (let cx = 0; cx < S; cx++) {
       let h = 0.6 + fbm(nA, cx * 0.045, cz * 0.045, 4) * 0.95;
       const dh = Math.hypot(cx - hillX, cz - hillZ) / hillR;
       if (dh < 1) h += (1 - dh) * (1 - dh) * hillH * (0.75 + 0.35 * nB(cx * 0.12, cz * 0.12));
+      if (hi) {
+        const dx = cx - sx, dz = cz - sz, ang = Math.atan2(dz, dx), dist = Math.hypot(dx, dz);
+        // the valley's edge, wobbling round it and nearer on the high side
+        const edge = R.r0 * N * (1 + 0.22 * nD(Math.cos(ang) * 1.4 + 5, Math.sin(ang) * 1.4 + 5)) - hi.lean * Math.cos(ang - hi.side) * N * 0.07;
+        // a steep escarpment, but for a few broad slopes where a road can climb
+        const ramp = 0.5 + 0.5 * nD(Math.cos(ang) * 2.2 + 17, Math.sin(ang) * 2.2 + 17);
+        const wide = lerp(1.4, 7.5, smoothstep(0.62, 0.86, ramp));
+        const d = dist + nD(cx * 0.16, cz * 0.16) * 1.1;
+        const t1 = smoothstep(edge, edge + wide, d);
+        let up = t1 * hi.h1 * (1 + 0.12 * nD(cx * 0.05 + 3, cz * 0.05 + 3));
+        // a second, higher tier further out
+        if (R.tiers > 1) up += smoothstep(edge + N * 0.12, edge + N * 0.12 + wide * 0.8, d) * hi.h2;
+        // and peaks on it
+        for (const p of hi.peaks) { const q = Math.hypot(cx - p.x, cz - p.z) / p.r; if (q < 1) up += (1 - q * q) * p.h * t1; }
+        h += up;
+      }
       if (hasRiver) {
         const along = riverAlongZ ? cz : cx, across = riverAlongZ ? cx : cz;
         const centre = riverSide * N + Math.sin(along * riverFreq + riverPhase) * riverAmp + nC(along * 0.07, 3.3) * 2.5;

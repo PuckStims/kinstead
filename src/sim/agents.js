@@ -300,7 +300,11 @@ export class Agents {
     if (!tiles) return;
     const startPos = r.loc === 'out' && r.walk ? { x: r.walk.x, z: r.walk.z } : null;
     if (r.walk) this._drop(r.walk);
-    const plan = r.skipTransit ? null : this.game.transit.plan(A, B, tiles.length);
+    // (how long the walk takes, climbing counted: see climbCost)
+    let walk = 0;
+    for (let i = 1; i < tiles.length; i++) walk += climbCost(w.walkHeight(tiles[i][0] + 0.5, tiles[i][1] + 0.5) - w.walkHeight(tiles[i - 1][0] + 0.5, tiles[i - 1][1] + 0.5));
+    const plan = r.skipTransit ? null : this.game.transit.plan(A, B, walk);
+    if (plan) this.game.transit.tally(plan, walk);
     r.skipTransit = false;
     if (plan) {
       const t1 = this.game.paths.road(A.access.x, A.access.z, plan.board.access.x, plan.board.access.z);
@@ -404,7 +408,7 @@ export class Agents {
       heading: 0, phase: Math.random() * 6, mode: 'path', onArrive, idle: 0, speedK: lk.speed,
       r: null, dest: null, delay: 0, doorOut: 0, doorIn: 0, moving: false, ghost: false, hand: false,
       area: null, ring: false, baseY: 0, working: false, tool: null, target: null, route: null, floorIn: null, floorOut: null, stairsIn: null, stairsOut: null, plotOut: 0, plotY: 0,
-      ys: null, standY: null, cabin: null, seat: 0, doorRef: null, sit: false, seatOf: null, side: 0, hold: 0, narrow: false,
+      ys: null, standY: null, cabin: null, seat: 0, doorRef: null, sit: false, seatOf: null, side: 0, hold: 0, narrow: false, boarding: false, inView: true,
       carry: null, bag: false, lamp: false, lx: null, ly: null, lz: null, _i: 0,
     };
     if (pts.length > 1) wk.heading = Math.atan2(pts[1][0] - pts[0][0], pts[1][1] - pts[0][1]);
@@ -739,10 +743,11 @@ export class Agents {
 
   // Passenger waiting at a stop for line (visible, standing around). At a
   // gondola station (whose model gives its way up, stop.stair, and its
-  // deck), up the stairs or the lift first, to wait on the deck clear of the
-  // cabins' way through (transit.deckSpots), at an interchange by the berth
-  // where line calls; they board only once up there (onDeck).
-  waitAt(r, stop, line = null) {
+  // deck), up the stairs or the lift first (not if onDeck, changing lines
+  // there), to wait on the deck clear of the cabins' way through
+  // (transit.deckSpots), at an interchange by the berth where line calls;
+  // they board only once up there (onDeck).
+  waitAt(r, stop, line = null, onDeck = false) {
     if (stop.stair && stop.deck && r.walk) {
       // a seat on one of its benches if there's one free (taken from the
       // front), or somewhere to stand, facing the middle (or the berth)
@@ -759,7 +764,7 @@ export class Agents {
         end = [spots && spots.length ? spots[(Math.random() * spots.length) | 0] : [d.x, d.z]];
       }
       Object.assign(wk, {
-        pts: [[wk.x, wk.z], ...stop.stair.map(p => [p.x, p.z]), ...end], ys: [null, ...stop.stair.map(p => p.y), ...end.map(() => d.y)],
+        pts: [[wk.x, wk.z], ...(onDeck ? [] : stop.stair.map(p => [p.x, p.z])), ...end], ys: [onDeck ? d.y : null, ...(onDeck ? [] : stop.stair.map(p => p.y)), ...end.map(() => d.y)],
         seg: 0, t: 0, mode: 'path', delay: 0, doorIn: 0, doorOut: 0, floorIn: null, floorOut: null, stairsIn: null, stairsOut: null, plotOut: 0, standY: null, sit: false,
         onArrive: () => {
           wk.mode = 'wait';
@@ -795,6 +800,20 @@ export class Agents {
     wk.z = p.z + (cz - p.z) * 0.25 + (Math.random() - 0.5) * 0.35;
     wk.heading = Math.atan2(p.x - cx, p.z - cz);
     r.loc = 'wait';
+  }
+
+  // A passenger changing lines at stop: out of the cabin (at: where it
+  // stands, at a gondola station) and across the deck to wait for line, or
+  // off the coach to wait by the stop. Returns how long stepping out takes.
+  changeAt(r, stop, at, line) {
+    const rode = r.walk, from = rode && rode.mode === 'ride' ? [rode.x, rode.z] : at ? seatAt(at, 0) : null;
+    if (rode) this._drop(rode);
+    r.at = stop.id;
+    if (!stop.deck || !stop.stair || !from) { this.waitAt(r, stop, line); return 0; }
+    const wk = this._makeWalker(r.lk, [from], null);
+    wk.r = r; r.walk = wk; wk.y = wk.standY = stop.deck.y;
+    this.waitAt(r, stop, line, true);
+    return 0.12 / (CONFIG.WALK_SPEED * wk.speedK);
   }
 
   // Is a waiting passenger ready to board (up on the deck, at a gondola station)?
@@ -939,9 +958,11 @@ export class Agents {
           const a = wk.pts[wk.seg], b = wk.pts[wk.seg + 1];
           const dy = wk.ys && wk.ys[wk.seg] != null && wk.ys[wk.seg + 1] != null ? wk.ys[wk.seg + 1] - wk.ys[wk.seg] : 0;
           const L = Math.hypot(b[0] - a[0], b[1] - a[1], dy);
-          const left = L * (1 - wk.t);
+          // (on the ground, slower uphill: see climbCost)
+          const k = dy || L < 1e-6 ? 1 : climbCost((w.walkHeight(b[0], b[1]) - w.walkHeight(a[0], a[1])) / L);
+          const left = L * (1 - wk.t) * k;
           if (rem >= left) { rem -= left; wk.seg++; wk.t = 0; }
-          else { wk.t += rem / Math.max(L, 1e-6); rem = 0; }
+          else { wk.t += rem / k / Math.max(L, 1e-6); rem = 0; }
         }
         if (wk.seg >= wk.pts.length - 1) {
           const end = wk.pts[wk.pts.length - 1];
@@ -1173,6 +1194,11 @@ const BODY_D = 0.064, CELL = 0.25, SIDE_IN = 0.02, SIDE_OUT = 0.03;
 // how long one villager takes to clear a doorway (a body's width at the slow
 // pace through a door), so the next one out waits that long
 const DOOR_GAP = 1.1;
+
+// How much longer a step takes on ground rising g for every unit along (as a
+// multiple of a step on the flat): by Naismith's rule, each unit climbed as
+// long as CONFIG.CLIMB along the flat; a steep way down a little slower too.
+export const climbCost = (g) => 1 + CONFIG.CLIMB * Math.max(0, g) + 0.6 * Math.max(0, -g - 0.15);
 // how long a villager waits at the kerb for a vehicle standing in a queue
 // across their way before going round it (one on the move, as long as it takes)
 const CAR_PATIENCE = 30;

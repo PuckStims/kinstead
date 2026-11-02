@@ -2,12 +2,13 @@
 // simulation for a few in-game days and round-trips a save.
 // Usage: npm install three@0.170.0 --no-save && node scripts/check.js
 
+import { CONFIG } from '../src/config.js';
 import { World } from '../src/world/world.js';
 import { growDemoTown } from '../src/world/demo.js';
 import { PathFinder } from '../src/sim/path.js';
 import { Sim } from '../src/sim/sim.js';
 import { Agents } from '../src/sim/agents.js';
-import { Transit } from '../src/sim/transit.js';
+import { Transit, G_HANG } from '../src/sim/transit.js';
 import { Animals } from '../src/sim/animals.js';
 import { Construction } from '../src/sim/construction.js';
 import { siteGeo, bodyBox } from '../src/render/construction.js';
@@ -235,6 +236,20 @@ for (let s = 1; s <= 25; s++) {
   if (!th.connected) ok(false, `seed ${s}: town hall not connected`);
 }
 ok(true, 'generated 25 worlds');
+// and hilly and mountainous valleys: the village on the valley floor, its
+// town hall on the road, high ground round it with steep slopes to climb
+for (const relief of ['hilly', 'mountains']) {
+  let fine = 0, high = 0, steep = 0;
+  for (let s = 1; s <= 12; s++) {
+    const w = World.createNew({ N: 48, seed: s * 7919, name: 'T', relief });
+    const th = [...w.buildings.values()].find(b => b.type === 'townhall');
+    if (th && th.connected) fine++;
+    let top = 0, st = 0;
+    for (let z = 0; z < w.N; z++) for (let x = 0; x < w.N; x++) { top = Math.max(top, w.terrain.tileAvg(x, z)); if (w.terrain.slope(x, z) > 0.85) st++; }
+    high += top; steep += st / (w.N * w.N);
+  }
+  ok(fine === 12 && high / 12 > (relief === 'hilly' ? 3 : 5) && steep / 12 > 0.05, `${relief === 'hilly' ? 'hilly' : 'mountain'} valleys found their village on the valley floor (${fine} of 12), the land up to ${(high / 12).toFixed(1)} high round it, ${Math.round((100 * steep) / 12)}% of it too steep for a road`);
+}
 
 // 3. simulation
 const scene = { add() {}, remove() {} };
@@ -398,7 +413,7 @@ ok(game.transit.vehicles.length === 1, 'one coach on the line');
   }
   if (A && B) {
     const gl = game.transit.createLine('gondola', [A.id, B.id]);
-    ok(gl.ok && gl.line.name.startsWith('Gondola Line'), `gondola line created over ${under(A, B)} buildings, ${Math.hypot(B.x - A.x, B.z - A.z).toFixed(1)} tiles (${gl.reason || gl.line.name})`);
+    ok(gl.ok && gl.line.name === 'Red Line', `gondola line created over ${under(A, B)} buildings, ${Math.hypot(B.x - A.x, B.z - A.z).toFixed(1)} tiles (${gl.reason || gl.line.name})`);
     game.transit.setVehicles(gl.line.id, 4);
     game.transit.rebuild();
     const r = game.transit.routes.get(gl.line.id);
@@ -408,7 +423,7 @@ ok(game.transit.vehicles.length === 1, 'one coach on the line');
     r.pts.forEach(([x, z], i) => {
       if (Math.hypot(x - A.x - 0.5, z - A.z - 0.5) < 0.7 || Math.hypot(x - B.x - 0.5, z - B.z - 0.5) < 0.7) return;
       const o = w.buildingOn(Math.floor(x), Math.floor(z));
-      if (o) worst = Math.min(worst, r.ys[i] - 0.27 - game.transit._topOf(o));
+      if (o) worst = Math.min(worst, r.ys[i] - G_HANG - game.transit._topOf(o));
     });
     ok(worst > 0, `the cabins clear every roof under the line (the closest by ${worst.toFixed(2)})`);
     ok(r.marks.length === 2 && r.wheels.length === 2 && game.transit.cables.has(gl.line.id), 'it turns round a bullwheel at each end, with its cable drawn');
@@ -435,6 +450,16 @@ ok(game.transit.vehicles.length === 1, 'one coach on the line');
     ok(cabins.length === 4 && backwards === 0 && called.size === 2, `4 cabins run round the line, never backwards, calling at both stations`);
     ok(minGap > L / 8, `the cabins stay spread out (closest ${minGap.toFixed(1)} of ${(L / 4).toFixed(1)} tiles apart)`);
     ok(gs.riders > 0 && gs.fares > 0 && (rode || !rider || !from || !to), `villagers ride the gondola (${gs.riders} riders, $${gs.fares} in fares${rode ? ', one sent across' : ''})`);
+    // a trip to the top of a hill, the station up there with it: walking it
+    // takes the climb as well, the gondola climbs for them
+    {
+      const lo = { x: A.x + 1, z: A.z, baseY: A.baseY }, up = 4, was = B.baseY;
+      B.baseY = was + up;
+      const hi = { x: B.x + 1, z: B.z, baseY: B.baseY }, flat = (Math.abs(hi.x - lo.x) + Math.abs(hi.z - lo.z)) * 1.2, hill = flat + CONFIG.CLIMB * up;
+      const p = game.transit.plan(lo, hi, hill);
+      B.baseY = was;
+      ok(p && p.line === gl.line && p.cost < flat, `a trip up a hill takes the gondola: walking it is ${hill.toFixed(0)} tiles' worth, climbing counted, by gondola ${p ? p.cost.toFixed(0) : '-'}`);
+    }
     const back = deserialize(JSON.parse(JSON.stringify(serialize(w))));
     const bl = back.lines.find(l => l.id === gl.line.id);
     const t2 = new Transit({ world: back, renderer: { scene }, paths: new PathFinder(back), view: null, emit() {}, on() {} });
@@ -447,6 +472,39 @@ ok(game.transit.vehicles.length === 1, 'one coach on the line');
     w.removeBuilding(A.id);
   } else console.log('      (no room for a gondola line on this map)');
   w.setSandbox({ infiniteMoney: false, unlockAll: false });
+}
+
+// 3b3. gondolas up the mountainside, from beside the town hall on the valley
+// floor to the highest flat ground up the escarpment: no span steeper than a
+// cabin can hang under, the cable clear of every cabin's roof all the way
+{
+  let lines = 0, steepest = 0, closest = Infinity;
+  for (let s = 1; s <= 8; s++) {
+    const mw = World.createNew({ N: 64, seed: s * 1009, name: 'T', relief: 'mountains' });
+    mw.setSandbox({ infiniteMoney: true, unlockAll: true, instantBuild: true });
+    const mg = { speed: 1, env: { night: 0 }, renderer: { scene }, view: { smoke: { emit() {} } }, _ev: {}, on(e, f) { (this._ev[e] ||= []).push(f); }, emit(e, d) { for (const f of this._ev[e] || []) f(d); }, world: mw };
+    mg.paths = new PathFinder(mw); mg.sim = new Sim(mg); mg.transit = new Transit(mg);
+    const th = [...mw.buildings.values()].find(b => b.type === 'townhall'), t = mw.terrain;
+    let lo = null, hi = null, top = 0;
+    for (let z = 2; z < mw.N - 2 && !lo; z++) for (let x = 2; x < mw.N - 2 && !lo; x++) if (Math.hypot(x - th.x, z - th.z) > 2 && Math.hypot(x - th.x, z - th.z) < 6 && mw.checkBuild('gondola', x, z).ok) lo = [x, z];
+    if (!lo) continue;
+    for (let z = 3; z < mw.N - 3; z++) for (let x = 3; x < mw.N - 3; x++) {
+      const h = t.tileAvg(x, z), d = Math.hypot(x - lo[0], z - lo[1]);
+      if (h > top && d > 9 && d < 18 && t.slope(x, z) < 0.3 && t.slope(x, z + 1) < 0.3) { top = h; hi = [x, z]; }
+    }
+    if (!hi) continue;
+    mw.placeRoads([[hi[0] - 1, hi[1] + 1], [hi[0], hi[1] + 1], [hi[0] + 1, hi[1] + 1]], 1);
+    const st = [lo, hi].map(([x, z]) => mw.placeBuilding('gondola', x, z, { instant: true })).filter(r => r.ok).map(r => r.building);
+    const ln = st.length === 2 ? mg.transit.createLine('gondola', st.map(b => b.id)) : { ok: false };
+    if (!ln.ok) continue;
+    mg.transit.rebuild();
+    const r = mg.transit.routes.get(ln.line.id);
+    if (!r) continue;
+    lines++;
+    for (const leg of r.legs) for (let i = 0; i + 1 < leg.sup.length; i++) steepest = Math.max(steepest, Math.abs(leg.sup[i + 1].s.h - leg.sup[i].s.h) / (leg.sup[i + 1].u - leg.sup[i].u));
+    closest = Math.min(closest, mg.transit.cabinClearance(r).clear);
+  }
+  ok(lines >= 6 && steepest <= 1.001 && closest > 0.005, `gondolas up the mountainside (${lines} lines): no span steeper than one in one (the steepest ${steepest.toFixed(2)}), the cable over every cabin's roof all the way (by ${closest.toFixed(3)} at the closest)`);
 }
 
 // 3c. animals keep out of buildings and stay in their habitat

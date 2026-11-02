@@ -32,7 +32,7 @@ const SHOTS = [
   { name: 'seasons', town: 'market', W: 960, H: 600, focus: 'townhall', zoom: 2.3, hours: 12, seasons: true },
   { name: 'farms', town: 'mill', W: 960, H: 600, focus: 'farm', zoom: 2.4, hours: 11, season: 1, fields: true },
   { name: 'merge', merge: ['market', 'hamlet'], W: 960, H: 600, zoom: 1.6, fit: true, hours: 10, season: 1 },
-  { name: 'gondola', town: 'market', W: 960, H: 600, gondola: true, zoom: 3.2, hours: 10.5, season: 1 },
+  { name: 'gondola', valley: { seed: 477851, N: 64, relief: 'mountains' }, W: 960, H: 600, climb: true, zoom: 2.3, hours: 10.5, season: 1 },
   { name: 'diagonals', town: 'market', W: 960, H: 600, diagonal: true, zoom: 4.8, hours: 10.5, season: 1 },
   { name: 'camera', town: 'market', W: 960, H: 600, focus: 'townhall', zoom: 2.4, hours: 15, season: 1, turn: 160, elev: 15, fov: 45, sky: true },
 ];
@@ -90,7 +90,7 @@ async function post(name, canvas, type = 'webp', q = 0.92) {
 
 let loaded = null;
 async function loadTown(spec) {
-  const key = spec.merge ? spec.merge.join('+') : spec.town;
+  const key = spec.merge ? spec.merge.join('+') : spec.valley ? JSON.stringify(spec.valley) : spec.town;
   if (loaded === key) return;
   const g = G();
   if (spec.merge) {
@@ -108,6 +108,9 @@ async function loadTown(spec) {
     let r;
     try { r = mergeTowns(a, b, arr); } catch { r = mergeTowns(a, b, besideOffset(a.N, b.N, 'right')); }
     g.loadData(r.data);
+  } else if (spec.valley) {
+    // a new village in a valley of its own (its seed, size and relief)
+    g.newGame({ name: 'Altura', ...spec.valley, sandbox: { infiniteMoney: true, unlockAll: true, instantBuild: true } });
   } else {
     const def = STARTERS.find(s => s.id === spec.town);
     g.newGame({ name: def.town, starter: def.id });
@@ -235,6 +238,34 @@ function gondola(w, p) {
   return { x: (best.a[0] + best.b[0]) / 2 + 0.5, z: (best.a[1] + best.b[1]) / 2 + 0.5, y: (st[0].baseY + st[1].baseY) / 2 + 0.6 };
 }
 
+// A gondola up out of the valley for its picture, as in La Paz: a station
+// by the town on the valley floor and one on the highland above the
+// escarpment (a short road laid up there for it), the Red Line climbing
+// between them on its towers, its cabins spread along it. Returns the
+// middle of the line, up in the air.
+function climb(w, p) {
+  const g = G(), t = w.terrain;
+  let lo = null, hi = null, top = 0;
+  for (let z = 2; z < w.N - 2 && !lo; z++) for (let x = 2; x < w.N - 2 && !lo; x++) {
+    const d = Math.hypot(x - p.x, z - p.z);
+    if (d > 2 && d < 6 && w.checkBuild('gondola', x, z).ok) lo = [x, z];
+  }
+  if (!lo) return p;
+  for (let z = 3; z < w.N - 3; z++) for (let x = 3; x < w.N - 3; x++) {
+    const h = t.tileAvg(x, z), d = Math.hypot(x - lo[0], z - lo[1]);
+    if (h > top && d > 9 && d < 18 && t.slope(x, z) < 0.3 && t.slope(x, z + 1) < 0.3) { top = h; hi = [x, z]; }
+  }
+  if (!hi) return p;
+  w.placeRoads([[hi[0] - 1, hi[1] + 1], [hi[0], hi[1] + 1], [hi[0] + 1, hi[1] + 1]], 1);
+  const st = [lo, hi].map(([x, z]) => w.placeBuilding('gondola', x, z, { instant: true })).filter(r => r.ok).map(r => r.building);
+  const r = st.length === 2 ? g.transit.createLine('gondola', st.map(b => b.id)) : { ok: false };
+  if (!r.ok) return p;
+  g.transit.setVehicles(r.line.id, 10);
+  g.transit.rebuild();
+  step(60);
+  return { x: (lo[0] + hi[0]) / 2 + 0.5, z: (lo[1] + hi[1]) / 2 + 0.5, y: (st[0].baseY + st[1].baseY) / 2 + 0.8 };
+}
+
 // A diagonal street out of the town for its picture: from a street near the
 // middle, out across open ground at 45 degrees (running up the picture),
 // lined both sides with houses and shops turned to face it, a lane crossing
@@ -357,6 +388,7 @@ async function shoot(spec) {
   let p = spec.at || (spec.focus ? focusOn(w, spec.focus) : centre(w));
   if (spec.fields) plough(w, p);
   if (spec.gondola) p = gondola(w, p);
+  if (spec.climb) p = climb(w, focusOn(w, 'townhall'));
   if (spec.diagonal) p = diagonal(w, p);
   let pic;
   if (spec.lineup) {

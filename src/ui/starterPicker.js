@@ -19,8 +19,8 @@ export function starterPickerHTML() {
   return `<div class="starters">${card(EMPTY, 'Empty valley', 'Found a village from scratch: a town hall, a well, a market stall and two cottages.')}${STARTERS.map(s => card(s.id, s.name, s.desc)).join('')}</div>`;
 }
 
-// Wires up the cards. getMap() gives the seed and size typed in for an
-// empty valley. Returns { pick } (the chosen id, or EMPTY).
+// Wires up the cards. getMap() gives the seed, size and relief chosen for
+// an empty valley. Returns { pick } (the chosen id, or EMPTY).
 export function mountStarterPicker(root, game, { getMap, onPick }) {
   const state = { pick: EMPTY };
   const cards = [...root.querySelectorAll('.starter')];
@@ -53,18 +53,18 @@ export function mountStarterPicker(root, game, { getMap, onPick }) {
   // the empty valley follows the seed and size fields
   let emptyKey = null, timer = 0;
   const emptyValley = () => {
-    const { seed, N } = getMap();
-    const key = `${seed}:${N}`;
+    const { seed, N, relief } = getMap();
+    const key = `${seed}:${N}:${relief}`;
     if (key === emptyKey) return null;
     emptyKey = key;
-    const w = World.createNew({ N, seed, name: 'Preview' });
+    const w = World.createNew({ N, seed, relief, name: 'Preview' });
     cardOf(EMPTY).querySelector('.m').textContent = `${N}×${N} · a few settlers · $${fmt(CONFIG.START_MONEY)} · day 1`;
     show(EMPTY, w);
     return w;
   };
   emptyValley();
   const refresh = () => { clearTimeout(timer); timer = setTimeout(() => { const w = emptyValley(); if (w && state.pick === EMPTY && state.shown) preview(w); }, 250); };
-  for (const sel of ['#ngSeed', '#ngSize']) root.querySelector(sel)?.addEventListener('input', refresh);
+  for (const sel of ['#ngSeed', '#ngSize', '#ngRelief']) root.querySelector(sel)?.addEventListener('input', refresh);
   root.querySelector('#ngDice')?.addEventListener('click', refresh);
 
   // the town behind the title screen becomes the one picked
@@ -79,14 +79,14 @@ export function mountStarterPicker(root, game, { getMap, onPick }) {
     state.shown = true;
     const def = STARTERS.find(s => s.id === id);
     if (onPick) onPick(id, id === EMPTY ? null : def);
-    const { seed, N } = getMap();
+    const { seed, N, relief } = getMap();
     if (def && def.heavy && !starterGrown(id)) {
       // a heavy town: say so and let the window draw before it's built
       c.querySelector('.m').textContent = `Building the ${def.name.toLowerCase()}…`;
       setTimeout(() => setTimeout(() => { if (root.isConnected && grow(def) && state.pick === id) preview(loadStarter(id)); }, 30), 0);
       return;
     }
-    preview(id === EMPTY ? World.createNew({ N, seed, name: 'Preview' }) : loadStarter(id));
+    preview(id === EMPTY ? World.createNew({ N, seed, relief, name: 'Preview' }) : loadStarter(id));
   };
   return state;
 }

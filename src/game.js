@@ -225,9 +225,9 @@ export class Game {
     this.speed = 1;
   }
 
-  newGame({ name, seed, N, sandbox, starter = null }) {
+  newGame({ name, seed, N, sandbox, starter = null, relief = 'hilly' }) {
     this.endNet();
-    const w = starter ? loadStarter(starter, { name, sandbox }) : World.createNew({ N, seed, name, sandbox });
+    const w = starter ? loadStarter(starter, { name, sandbox }) : World.createNew({ N, seed, name, sandbox, relief });
     w.townId = newTownId();   // every game from the same starter is a town of its own
     this.ui.closeAllWindows();   // none of them is about this town
     this.load(w, { fresh: !starter });

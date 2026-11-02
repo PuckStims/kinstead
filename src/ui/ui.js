@@ -1198,13 +1198,14 @@ export class UI {
   showNewGame(onCreate) {
     const rng = new RNG(randomSeed());
     const name = genTownName(rng);
-    this.openModal(`<h2>Found a new village</h2><p class="lead">Start in an empty valley, or take over a village a few weeks along. Every seed grows a different valley — rivers, lakes, hills and forests.</p>
+    this.openModal(`<h2>Found a new village</h2><p class="lead">Start in an empty valley, or take over a village a few weeks along. Every seed grows a different valley — rivers, lakes, hills and forests, and highland round it to climb (or a gondola to take).</p>
       <div class="field"><label>Start from</label>${starterPickerHTML()}</div>
       <div class="field"><label>Village name</label><input id="ngName" maxlength="40" value="${esc(name)}"></div>
       <div class="grid2">
         <div class="field"><label>Map seed</label><div class="inline"><input id="ngSeed" style="flex:1" value="${randomSeed() % 1000000}"><button class="btn small" id="ngDice" title="Random seed">🎲</button></div></div>
         <div class="field"><label>Valley size</label><select id="ngSize"><option value="32">Small · 32×32 (hamlet)</option><option value="48" selected>Medium · 48×48 (village)</option><option value="64">Large · 64×64 (town)</option><option value="80">Huge · 80×80 (valley)</option></select></div>
       </div>
+      <div class="field"><label>The land round it</label><select id="ngRelief"><option value="gentle">Gentle · a valley with a hill or two</option><option value="hilly" selected>Hilly · highland round the valley, steep slopes to climb</option><option value="mountains">Mountains · higher still, a second tier and peaks</option></select></div>
       <div class="field"><label class="inline"><input type="checkbox" id="ngInf"> Sandbox: unlimited money</label></div>
       <div class="field"><label class="inline"><input type="checkbox" id="ngAll"> Sandbox: unlock every building from the start</label></div>
       <div class="field"><label class="inline"><input type="checkbox" id="ngFree"> Sandbox: upgrade buildings without meeting their needs</label></div>
@@ -1218,18 +1219,18 @@ export class UI {
       // a starter town comes with its own valley: the seed and size are its own
       const typed = {};
       const picker = mountStarterPicker(c, this.game, {
-        getMap: () => ({ seed: seedOf(), N: Number(c.querySelector('#ngSize').value) }),
+        getMap: () => ({ seed: seedOf(), N: Number(c.querySelector('#ngSize').value), relief: c.querySelector('#ngRelief').value }),
         onPick: (id, def) => {
           const seedIn = c.querySelector('#ngSeed'), sizeIn = c.querySelector('#ngSize');
           if (def && !seedIn.disabled) Object.assign(typed, { seed: seedIn.value, N: sizeIn.value });
           if (def) { seedIn.value = def.seed; sizeIn.value = def.N; } else if (seedIn.disabled) { seedIn.value = typed.seed; sizeIn.value = typed.N; }
-          for (const el of [seedIn, sizeIn, c.querySelector('#ngDice')]) el.disabled = !!def;
+          for (const el of [seedIn, sizeIn, c.querySelector('#ngDice'), c.querySelector('#ngRelief')]) el.disabled = !!def;
         },
       });
       c.classList.add('wide');
       c.querySelector('#ngGo').onclick = () => {
         const seed = seedOf();
-        const opts = { name: c.querySelector('#ngName').value.trim() || name, seed, N: Number(c.querySelector('#ngSize').value), starter: picker.pick === EMPTY ? null : picker.pick, sandbox: { infiniteMoney: c.querySelector('#ngInf').checked, unlockAll: c.querySelector('#ngAll').checked, freeUpgrades: c.querySelector('#ngFree').checked, instantBuild: c.querySelector('#ngInst').checked } };
+        const opts = { name: c.querySelector('#ngName').value.trim() || name, seed, N: Number(c.querySelector('#ngSize').value), relief: c.querySelector('#ngRelief').value, starter: picker.pick === EMPTY ? null : picker.pick, sandbox: { infiniteMoney: c.querySelector('#ngInf').checked, unlockAll: c.querySelector('#ngAll').checked, freeUpgrades: c.querySelector('#ngFree').checked, instantBuild: c.querySelector('#ngInst').checked } };
         this.closeModal();
         onCreate(opts);
       };
@@ -1353,14 +1354,20 @@ export class UI {
     const g = this.game, w = this.world;
     const lines = w.lines;
     const gLock = gondolaLock(w);
-    let h = `<h2>Transit lines</h2><p class="lead">Coaches loop between coach stops on the roads. Trains never reverse, so a rail line needs a loop of track passing every station; a loop can run up to three trains. Gondola cabins run on a cable straight from station to station and back, over roofs, streets and the river; a line takes up to ${TRANSIT.gondola.maxVehicles} cabins. Villagers on long trips walk to a stop, wait, ride and pay a fare.</p>`;
+    let h = `<h2>Transit lines</h2><p class="lead">Coaches loop between coach stops on the roads. Trains never reverse, so a rail line needs a loop of track passing every station; a loop can run up to three trains. Gondola cabins run on a cable straight from station to station and back, over roofs, streets and the river; a line takes up to ${TRANSIT.gondola.maxVehicles} cabins, and lines meet at an interchange. Villagers take whatever gets them there soonest, walking or riding, a hill to climb counted, changing lines if that's quicker, and pay a fare for each ride.</p>`;
     h += `<div class="actions" style="margin:0 0 12px"><button class="btn primary" id="nlCoach">🐴 New coach line</button><button class="btn primary" id="nlRail" ${w.unlockPop < 25 ? 'disabled title="Unlocks at 25 villagers"' : ''}>🚂 New rail line</button><button class="btn primary" id="nlGondola" ${gLock ? `disabled title="${typeof gLock === 'number' ? `Unlocks at ${gLock} villagers` : `Research ${TECHS.cablecars.name} first`}"` : ''}>🚡 New gondola line</button></div>`;
     if (!lines.length) h += `<div class="empty">No lines yet. Build at least two coach stops (Transit menu), then create a line.</div>`;
     h += `<div class="lines-list">${lines.map(l => {
       const st = g.transit.stats[l.id] || { riders: 0, fares: 0 };
       const cfg = TRANSIT[l.mode];
+      // (a gondola's climb, in storeys; the time a trip on it saves, in game
+      // minutes: a tile of walking takes about CONFIG.DAY_SECONDS / 24 / 60
+      // of a game minute's real seconds)
+      const climb = l.mode === 'gondola' ? g.transit.climbOf(l) : 0;
+      const mins = st.trips ? (st.saved / st.trips / CONFIG.WALK_SPEED) * (24 * 60 / CONFIG.DAY_SECONDS) : 0;
+      const more = [climb >= 0.3 ? `climbs about ${Math.round(climb / 0.3)} storeys` : '', st.trips ? `${fmt(st.trips)} trips, each about ${Math.round(mins)} min quicker than walking` : '', st.changes ? `${fmt(st.changes)} changing lines` : ''].filter(Boolean).join(' · ');
       return `<div class="line-item"><span class="dot" style="background:${l.color}"></span>
-        <div><b>${esc(l.name)}</b> ${l.broken ? `<span class="chip no"${l.blocked ? ` title="${esc(l.blocked)}"` : ''}>${l.blocked ? 'Cable blocked' : 'Route broken'}</span>` : ''}${l.blocked ? `<div class="m" style="font-size:12px;color:var(--brick)">${esc(l.blocked)}</div>` : ''}<div class="m" style="font-size:12px;color:var(--ink-2);font-weight:700">${l.stops.length} stops · ${l.vehicles} ${l.vehicles > 1 ? cfg.vehicles : cfg.vehicle} ·${fmt(st.riders)} riders · $${fmt(st.fares)} fares · upkeep ${cfg.upkeep * l.vehicles}/day</div></div>
+        <div><b>${esc(l.name)}</b> ${l.broken ? `<span class="chip no"${l.blocked ? ` title="${esc(l.blocked)}"` : ''}>${l.blocked ? 'Cable blocked' : 'Route broken'}</span>` : ''}${l.blocked ? `<div class="m" style="font-size:12px;color:var(--brick)">${esc(l.blocked)}</div>` : ''}<div class="m" style="font-size:12px;color:var(--ink-2);font-weight:700">${l.stops.length} stops · ${l.vehicles} ${l.vehicles > 1 ? cfg.vehicles : cfg.vehicle} ·${fmt(st.riders)} riders · $${fmt(st.fares)} fares · upkeep ${cfg.upkeep * l.vehicles}/day</div>${more ? `<div class="m" style="font-size:12px;color:var(--ink-2)">${more}</div>` : ''}</div>
         <div class="inline"><button class="btn small" data-veh="${l.id}" data-d="-1">−</button><button class="btn small" data-veh="${l.id}" data-d="1" title="Add a vehicle ($${cfg.vehicleCost})">+</button><button class="btn small danger" data-ldel="${l.id}">✕</button></div></div>`;
     }).join('')}</div>`;
     this.openModal(h, (c) => {

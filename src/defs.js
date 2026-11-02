@@ -1019,6 +1019,9 @@ export const TRANSIT = {
 };
 export const RAIL_COST = 30;
 export const LINE_COLORS = ['#d9534f', '#3f7fbf', '#4f9a5a', '#e3a73b', '#8a5aa8', '#2fa3a3', '#d9734a', '#c75b9b'];
+// Gondola lines take their colour, and their name, from La Paz's Mi
+// Teleférico, one after another as they open: the Red Line first.
+export const GONDOLA_COLORS = [['#d7262a', 'Red'], ['#f4c20d', 'Yellow'], ['#3aa645', 'Green'], ['#2a6fb8', 'Blue'], ['#f08a24', 'Orange'], ['#efefea', 'White'], ['#5cc3ec', 'Sky Blue'], ['#7a3f9a', 'Purple'], ['#7b4a2b', 'Brown'], ['#a9b0b6', 'Silver']];
 
 // Research: one project at a time, paid for with research points that the
 // town hall, schools and chapels produce every day. Each project unlocks

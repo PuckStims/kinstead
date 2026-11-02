@@ -7,7 +7,7 @@
 //  - building models reaching out of their plots, onto a road or into a
 //    neighbour's;
 //  - coaches, carts and trains through a building; gondola cabins and cables
-//    through a roof;
+//    through a roof, and a cable through its own cabins' roofs;
 //  - villagers walking into each other, vehicles into each other, and
 //    villagers into vehicles (counted, over every moment of the days played).
 // Besides what the villagers and vehicles happen to do over a few days, it
@@ -39,7 +39,7 @@ import { growDemoTown } from '../src/world/demo.js';
 import { PathFinder } from '../src/sim/path.js';
 import { Sim } from '../src/sim/sim.js';
 import { Agents, walkY } from '../src/sim/agents.js';
-import { Transit } from '../src/sim/transit.js';
+import { Transit, G_HANG, CABIN } from '../src/sim/transit.js';
 import { Animals } from '../src/sim/animals.js';
 import { Construction } from '../src/sim/construction.js';
 import { BUILDINGS } from '../src/defs.js';
@@ -371,12 +371,15 @@ function sweepPlots(game, S, F) {
   }
 }
 
-// Gondola cabins along every route, and the cables, clear of every roof.
+// Gondola cabins along every route, and the cables, clear of every roof, and
+// of the cabins' own roofs, climbing past them.
 function sweepCables(game, S, F) {
   const T = game.transit;
   for (const line of game.world.lines) {
     const r = T.routes.get(line.id);
     if (!r || line.mode !== 'gondola' || !r.ys) continue;
+    const cc = T.cabinClearance(r);
+    if (cc.clear < 0.005) F.add('gondola cable through its cabins', line.name, `${cc.clear.toFixed(3)} at ${at(cc.at.x, cc.at.z)}`);
     const stops = new Set(line.stops);
     const hits = new Map();
     for (let i = 0; i < r.pts.length - 1; i++) {
@@ -384,8 +387,8 @@ function sweepCables(game, S, F) {
       const L = Math.hypot(bx - ax, bz - az), k = Math.max(1, Math.ceil(L / 0.08));
       for (let s = 0; s <= k; s++) {
         const u = s / k, x = ax + (bx - ax) * u, z = az + (bz - az) * u, y = ya + (yb - ya) * u;
-        // the cabin: from its floor (G_HANG below the cable) to its roof (0.19 up); and the cable itself
-        for (const p of S.touch(x, z, y - 0.29, y - 0.06, 0.12)) if (!stops.has(p.b.id)) hits.set(p.b.id, { what: 'cabin', p, x, z });
+        // the cabin: from under its floor (G_HANG below the cable) to over its roof; and the cable itself
+        for (const p of S.touch(x, z, y - G_HANG - 0.02, y - G_HANG + CABIN.H + 0.02, 0.12)) if (!stops.has(p.b.id)) hits.set(p.b.id, { what: 'cabin', p, x, z });
         for (const p of S.touch(x, z, y - 0.01, y + 0.01, 0.01)) if (!stops.has(p.b.id) && !hits.has(p.b.id)) hits.set(p.b.id, { what: 'cable', p, x, z });
       }
     }
@@ -639,7 +642,7 @@ function play(label, w) {
         for (const m of v.meshes) {
           const p = m.position;
           if (cable) {
-            for (const q of S.touch(p.x, p.z, p.y - 0.29, p.y - 0.06, 0.12)) if (!v.line.stops.includes(q.b.id)) F.add('gondola cabin inside a building', `${v.line.name}, the ${name(q.b)}`, `${at(p.x, p.z)} y ${p.y.toFixed(2)} #${q.b.id}`);
+            for (const q of S.touch(p.x, p.z, p.y - G_HANG - 0.02, p.y - G_HANG + CABIN.H + 0.02, 0.12)) if (!v.line.stops.includes(q.b.id)) F.add('gondola cabin inside a building', `${v.line.name}, the ${name(q.b)}`, `${at(p.x, p.z)} y ${p.y.toFixed(2)} #${q.b.id}`);
           } else {
             const h = S.hit(p.x, p.z, p.y, 0.03);
             if (h && h.kind === 'wall') F.add(`${v.line.mode === 'rail' ? 'train' : 'coach'} through a building`, `${v.line.name}, the ${name(h.p.b)}`, `${at(p.x, p.z)} #${h.p.b.id}`);

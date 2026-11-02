@@ -6,6 +6,7 @@ export const CONFIG = {
   WATER_LEVEL: 0,
   START_MONEY: 4000,
   WALK_SPEED: 0.1375,      // tiles per real second at 1x: an unhurried stroll
+  CLIMB: 5,                // tiles of level walking each unit of height climbed takes as long as (Naismith's rule)
   CART_SPEED: 0.18,        // a horse and cart at a walk, a little quicker than people on foot
   MAX_AGENTS: 1200,
   // Villagers shown: Thinned (settings.villagers 'crowds'): in each patch of

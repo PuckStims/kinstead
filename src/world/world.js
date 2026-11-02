@@ -1884,8 +1884,8 @@ export class World {
   }
 
   // ------------------------------------------------------------ creation
-  static createNew({ N = 48, seed, name, sandbox = null }) {
-    const { terrain, start, entryPath } = generateTerrain(N, seed);
+  static createNew({ N = 48, seed, name, sandbox = null, relief = 'gentle' }) {
+    const { terrain, start, entryPath } = generateTerrain(N, seed, relief);
     const w = new World(N, seed, terrain);
     w.townName = name || 'Kinstead';
     w.townId = newTownId();
