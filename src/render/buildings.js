@@ -4111,6 +4111,10 @@ MODELS.station = (c, L) => {
 // villager walks it, from the street to the deck; c.deck: the deck's middle
 // and height (see agents.js and transit.js).
 const CONCRETE = '#c6c1b7', CONCRETE_D = '#a49e93', HOOD = '#f3f3f0', ROOF_W = '#eeede8', DECK_STEEL = '#5d6266', NO_LINE = '#7d8a92';
+// A tall station's lift shaft (see gondolaWayUp): long, along the strip
+// beside the deck, and as wide across as that strip has room for (narrower
+// at an interchange); its car holds four in a row (agents.js)
+export const LIFT = { long: 0.38, across: { gondola: 0.135, gondolahub: 0.115 } };
 // (a line's colour as a light at night, k times as bright; none for no line)
 const lineGlow = (tint, k = 1.4) => tint === NO_LINE ? [0, 0, 0, 0] : [...new THREE.Color(tint).toArray().map(v => v * k), 3.1];
 MODELS.gondola = (c, L) => {
@@ -4413,8 +4417,9 @@ function gondolaDeck(c, L, DECK, D, post) {
 // on treads of 0.03, up a side strip from the street end and on round the
 // deck as far as they need, turning each corner on a landing: the
 // terminal's in stone, solid to the ground, the station's in timber on
-// stringers. On a tall station a glass lift instead, from the street up to
-// the deck. Of its ways round, the one whose top (where it meets the deck,
+// stringers. On a tall station a glass lift instead, its car taking those
+// waiting at its door up to the deck or down to the street (the way up
+// rising there on the spot; see agents.js). Of its ways round, the one whose top (where it meets the deck,
 // at the deck's height) is furthest from where the cables leave, as the
 // cabins pass through there at the deck's height. A street lamp at its
 // foot, a bench under the deck.
@@ -4431,34 +4436,47 @@ function gondolaWayUp(c, L, DECK, D, post, floor) {
     return Math.min(...c.cables.map(k => Math.abs(Math.atan2(Math.sin(a - k), Math.cos(a - k)))));
   };
   if (c.lift >= 0.5) {
-    // the lift: in the middle of the front strip, or near the front of a
-    // side strip; [x, z, and the way in to the deck from it]
-    const spots = [[0, S - 0.04, 0, -1], [S, 0.14, -1, 0], [-S, 0.14, 1, 0]];
-    const [lx, lz, ix, iz] = spots.reduce((a, b) => (clear(b[0], b[1]) > clear(a[0], a[1]) + by ? b : a));
-    const w = 0.1, h = DECK + 0.17, front = iz !== 0;
-    gb.box(lx, 0, lz, w + 0.012, h, w + 0.012, '#4f565b');
-    gb.glow(WARM[0], WARM[1], WARM[2], 1.2);
-    for (let y = 0.1; y < h - 0.12; y += 0.24) for (const sd of [-1, 1]) {
-      if (front) gb.box(lx + sd * (w / 2 + 0.007), y, lz, 0.004, 0.18, w - 0.03, GLASS);
-      else gb.box(lx, y, lz + sd * (w / 2 + 0.007), w - 0.03, 0.18, 0.004, GLASS);
+    // the lift: a long glazed shaft along the strip just off the deck, in
+    // the front strip or a side strip, its car room for four in a row (see
+    // LIFT); entered at one end from the street and on to the deck from its
+    // long side. [its middle x, z; ux, uz: along it, the way in from its
+    // street end; ix, iz: on to the deck]. Its glass and its car are drawn
+    // apart, as the villagers ride it (see agents.js): here its frame, a
+    // steel post at each corner and halfway along, a band round it every
+    // quarter tile up, a pit at its foot, the winding gear in a white box on
+    // top with a band of the line's colour, and the frames of its doors
+    const A = LIFT.across[c.berths ? 'gondolahub' : 'gondola'], LG = LIFT.long, off = F - 0.005 - A / 2;
+    const spots = [[0, off, -1, 0, 0, -1], [off, 0, 0, -1, -1, 0], [-off, 0, 0, -1, 1, 0]];
+    const [lx, lz, ux, uz, ix, iz] = spots.reduce((a, b) => (clear(b[0], b[1]) > clear(a[0], a[1]) + by ? b : a));
+    const hx = Math.abs(ux) * LG / 2 + Math.abs(uz) * A / 2, hz = Math.abs(uz) * LG / 2 + Math.abs(ux) * A / 2, h = DECK + 0.17;
+    gb.box(lx, 0, lz, 2 * hx + 0.02, 0.02, 2 * hz + 0.02, CONCRETE_D);
+    for (const sx of [-1, 0, 1]) for (const sz of [-1, 0, 1]) {
+      if ((!sx && !sz) || (!sx && ux) || (!sz && uz)) continue;   // (the corners, and halfway along its long sides)
+      gb.box(lx + sx * hx, 0.02, lz + sz * hz, 0.012, h - 0.02, 0.012, DECK_STEEL);
     }
-    gb.noGlow();
-    // its doors: at the street end, and out on to the deck
-    if (front) {
-      gb.box(lx, 0.02, lz + w / 2 + 0.008, 0.07, 0.15, 0.006, '#2f2c2a');
-      gb.box(lx, DECK, lz - w / 2 - 0.008, 0.07, 0.15, 0.006, '#2f2c2a');
-    } else {
-      gb.box(lx, 0.02, lz + w / 2 + 0.008, 0.07, 0.15, 0.006, '#2f2c2a');
-      gb.box(lx + ix * (w / 2 + 0.008), DECK, lz, 0.006, 0.15, 0.07, '#2f2c2a');
+    for (let y = 0.25; y < h - 0.1; y += 0.25) for (const sd of [-1, 1]) {
+      gb.box(lx, y, lz + sd * hz, 2 * hx, 0.008, 0.008, DECK_STEEL);
+      gb.box(lx + sd * hx, y, lz, 0.008, 0.008, 2 * hz, DECK_STEEL);
     }
+    gb.cbox(lx, h, lz, 2 * hx + 0.02, 0.07, 2 * hz + 0.02, HOOD, 0, 0.01);
+    gb.box(lx, h + 0.04, lz, 2 * hx + 0.024, 0.014, 2 * hz + 0.024, c.tint || NO_LINE);
+    // (a door: at (px, pz) in a face whose way out is (nx, nz), w wide)
+    const doorway = (px, pz, y, nx, nz, w) => {
+      for (const s of [-1, 1]) gb.box(px + nz * s * w / 2, y, pz + nx * s * w / 2, nz ? 0.01 : 0.008, 0.16, nz ? 0.008 : 0.01, DECK_STEEL);
+      gb.box(px, y + 0.16, pz, nz ? w + 0.01 : 0.008, 0.012, nz ? 0.008 : w + 0.01, DECK_STEEL);
+    };
+    doorway(lx - ux * (LG / 2 + 0.006), lz - uz * (LG / 2 + 0.006), 0.02, -ux, -uz, 0.08);
+    doorway(lx + ix * (A / 2 + 0.006), lz + iz * (A / 2 + 0.006), DECK, ix, iz, LG - 0.08);
+    // the way: from the street to its door, into it, up, and out on to the deck
+    const dx = lx - ux * (LG / 2 + 0.04), dz = lz - uz * (LG / 2 + 0.04);
     c.stair = [
-      { x: lx, y: 0.02, z: F },
-      { x: lx, y: 0.02, z: lz + w / 2 + 0.05 },
+      { x: dx, y: 0.02, z: F },
+      { x: dx, y: 0.02, z: dz },
       { x: lx, y: 0.02, z: lz },
       { x: lx, y: DECK, z: lz },
-      { x: lx + ix * 0.15, y: DECK, z: lz + iz * 0.15 },
+      { x: lx + ix * (A / 2 + 0.12), y: DECK, z: lz + iz * (A / 2 + 0.12) },
     ];
-    lamp(c, lx + (lx > 0 ? -0.1 : 0.1), F - 0.05, 0.3);
+    lamp(c, ux ? dx + 0.08 : lx - Math.sign(lx) * 0.1, F - 0.05, 0.3);
     return;
   }
   // the stairs: up a side strip from the street end, on round the back (and

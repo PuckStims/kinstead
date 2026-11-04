@@ -264,7 +264,8 @@ const sagOf = (len) => Math.min(0.12, len * 0.006);
 // (for the tests: how a cabin hangs from the cable, and its size)
 export { G_HANG, CABIN };
 // Why a gondola line can't run (route.blocked: what is in the cable's way).
-export const blockedReason = (bl) => `The cable can't clear ${bl.by ? `the ${BUILDINGS[bl.by.type].levels[bl.by.level].name}` : 'the ground'}: move a station, or put one nearer it`;
+// (by: a building, another line's cable, or null for the ground)
+export const blockedReason = (bl) => `The cable can't clear ${typeof bl.by === 'string' ? bl.by : bl.by ? `the ${BUILDINGS[bl.by.type].levels[bl.by.level].name}` : 'the ground'}: move a station, or put one nearer it`;
 
 export class Transit {
   constructor(game) {
@@ -466,7 +467,7 @@ export class Transit {
     const w = this.world, paths = this.game.paths;
     const stops = line.stops.map(id => w.buildings.get(id)).filter(Boolean);
     if (stops.length < 2) return null;
-    if (line.mode === 'gondola') return stops.every(b => stopOf(b, 'gondola')) ? this._cableRoute(stops, lifts, this._ends(line, stops)) : null;
+    if (line.mode === 'gondola') return stops.every(b => stopOf(b, 'gondola')) ? this._cableRoute(stops, lifts, this._ends(line, stops), line) : null;
     const stopTiles = stops.map(b => this._stopTile(b, line.mode));
     if (stopTiles.some(t => !t)) return null;
     let tiles = [];
@@ -626,8 +627,9 @@ export class Transit {
   // rise as far as G_LIFT, and the route says how far each must (lifts);
   // with them they are held there. blocked: what the cable still can't
   // clear, if anything.
-  // ends: where the cable ends at each station (_ends).
-  _cableRoute(stops, lifts = null, ends = null) {
+  // ends: where the cable ends at each station (_ends). line: the line it is
+  // (it passes over or well under older lines' cables, see _overCables).
+  _cableRoute(stops, lifts = null, ends = null, line = null) {
     const n = stops.length;
     const P = ends || stops.map(b => [b.x + fw(b) / 2, b.z + fd(b) / 2]);
     // a station's height, shared by the spans either side of it (and by
@@ -639,7 +641,10 @@ export class Transit {
     }
     const legs = [];
     for (let i = 0; i < n - 1; i++) legs.push(this._span(P[i], P[i + 1], stops[i], stops[i + 1], ref.get(stops[i].id), ref.get(stops[i + 1].id)));
-    const blocked = this._solve(legs);
+    let blocked = this._solve(legs);
+    // and over any older line's cable it doesn't pass well under
+    const others = line ? this._olderCables(line) : [];
+    if (others.length && legs.reduce((more, leg) => this._overCables(leg, others) || more, false)) blocked = this._solve(legs);
     // a station rises in steps of a quarter tile (the cable only goes higher)
     const lift = new Map();
     for (const [id, s] of ref) if (!lifts) { const k = Math.ceil((s.h - s.base) / 0.25 - 1e-6) * 0.25; s.h = s.base + k; if (k > 0) lift.set(id, k); }
@@ -761,7 +766,47 @@ export class Transit {
       const p0 = sup[i], p1 = sup[i + 1], len = p1.u - p0.u || 1e-6, f = Math.min(1, Math.max(0, (u - p0.u) / len));
       return p0.s.h + (p1.s.h - p0.s.h) * f - sagOf(len) * 4 * f * (1 - f);
     };
-    return { a, ux, uz, L, NS, req, by, sup, prof, pylons, at };
+    return { a, ux, uz, L, NS, HL, HW, req, by, sup, prof, pylons, at };
+  }
+
+  // The cables of the gondola lines before this one (or all of them, for a
+  // new line) as last worked out, each with its line's name.
+  _olderCables(line) {
+    const out = [];
+    for (const l of this.world.lines) {
+      if (l === line) break;
+      const R = l.mode === 'gondola' && this.routes.get(l.id);
+      if (R) out.push({ R, name: l.name });
+    }
+    return out;
+  }
+
+  // Where an older line's cable (others, from _olderCables) crosses a span,
+  // within its cabins' way (HW either side): unless the span's cable runs
+  // well under it (a cabin and its hanger and more), it must pass over, its
+  // cabins' floors a little over that cable; not near either of its
+  // stations (an interchange's berths keep their lines apart there). Adds
+  // that to what the span must clear (req); whether it asks more anywhere.
+  _overCables(leg, others) {
+    const { a, ux, uz, L, NS, HL, HW, req, by } = leg, room = G_HANG + 0.12, end = 0.6;
+    let more = false;
+    for (const { R, name } of others) for (let i = 0; i + 1 < R.pts.length; i++) {
+      const [px, pz] = R.pts[i], [qx, qz] = R.pts[i + 1];
+      const pu = (px - a[0]) * ux + (pz - a[1]) * uz, pv = (pz - a[1]) * ux - (px - a[0]) * uz;
+      const qu = (qx - a[0]) * ux + (qz - a[1]) * uz, qv = (qz - a[1]) * ux - (qx - a[0]) * uz;
+      if ((pv > HW && qv > HW) || (pv < -HW && qv < -HW) || Math.max(pu, qu) < end || Math.min(pu, qu) > L - end) continue;
+      // (the part of it within the way)
+      let t0 = 0, t1 = 1;
+      if (Math.abs(qv - pv) > 1e-9) { const ta = (-HW - pv) / (qv - pv), tb = (HW - pv) / (qv - pv); t0 = Math.max(0, Math.min(ta, tb)); t1 = Math.min(1, Math.max(ta, tb)); }
+      if (t0 > t1) continue;
+      const ua = pu + (qu - pu) * t0, ub = pu + (qu - pu) * t1, u0 = Math.max(end, Math.min(ua, ub)) - HL, u1 = Math.min(L - end, Math.max(ua, ub)) + HL;
+      const y = Math.max(R.ys[i] + (R.ys[i + 1] - R.ys[i]) * t0, R.ys[i] + (R.ys[i + 1] - R.ys[i]) * t1);
+      if (Math.max(leg.prof(u0), leg.prof((u0 + u1) / 2), leg.prof(u1)) <= y - room) continue;
+      for (let k = Math.max(0, Math.ceil(u0 / (L / NS))); k <= Math.min(NS, Math.floor(u1 / (L / NS))); k++) {
+        if (y + room > req[k] + 1e-6) { req[k] = y + room; by[k] = `${name}'s cable`; more = true; }
+      }
+    }
+    return more;
   }
 
   // Set the heights of a line's pylons and stations so the cable clears
@@ -1020,12 +1065,15 @@ export class Transit {
     const w = this.world;
     // how tall each gondola station must stand, for the tallest of its lines
     // (once more if that changes a station another line passes over)
+    // (each line's route kept as it is worked out, for the lines after it:
+    // they pass over or under its cable, see _overCables)
     let lifts;
     for (let again = 0; again < 2; again++) {
       lifts = new Map();
       for (const line of w.lines) {
         const r = line.mode === 'gondola' ? this._route(line) : null;
         if (r) for (const [id, k] of r.lifts) lifts.set(id, Math.max(lifts.get(id) || 0, k));
+        if (r && !r.blocked) this.routes.set(line.id, r);
       }
       if (!this._lift(lifts)) break;
     }

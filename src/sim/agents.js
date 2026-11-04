@@ -7,10 +7,12 @@ import { BUILDINGS, TRADES, servicesOf, tradesOf, visitOf } from '../defs.js';
 import { doorPoint, fw, fd, isOpen, DIRS } from '../world/world.js';
 import { tilePolyline } from './path.js';
 import { curvesAt } from '../world/roadShape.js';
-import { workArea } from '../render/buildings.js';
+import { workArea, LIFT } from '../render/buildings.js';
 import { VillagerView, lookOf, dressOf, carryFrom, strideLen } from '../render/villagers.js';
 import { traitsOf } from './people.js';
 import { plotGrid, plotPath, stepsGrid, stepAt, openAt } from './plotNav.js';
+import { GeoBuilder } from '../render/geo.js';
+import { MAT } from '../render/materials.js';
 
 // How villagers look and are drawn lives in render/villagers.js.
 export { lookOf };
@@ -108,6 +110,8 @@ export class Agents {
     this._seated = new Map();      // a bench seat at a gondola station → who has it
     this._grid = new Map();        // who stands where, by CELL (see _spread)
     this._doorNext = new Map();    // a building → when the next may come out of its door
+    this.lifts = new Map();        // a tall gondola station → its lift (see _runLifts)
+    this._liftScan = 0;
     this._in = [];                 // those in the crowd this frame
     this.ring = new THREE.Mesh(new THREE.RingGeometry(0.045, 0.065, 20).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: '#ffd84a', transparent: true, opacity: 0.95, depthWrite: false }));
     this.ring.renderOrder = 8;
@@ -129,6 +133,7 @@ export class Agents {
 
   dispose() {
     this.view.dispose();
+    for (const L of this.lifts.values()) this._dropLift(L);
     this.game.renderer.scene.remove(this.ring);
   }
 
@@ -409,7 +414,7 @@ export class Agents {
       r: null, dest: null, delay: 0, doorOut: 0, doorIn: 0, moving: false, ghost: false, hand: false,
       area: null, ring: false, baseY: 0, working: false, tool: null, target: null, route: null, floorIn: null, floorOut: null, stairsIn: null, stairsOut: null, plotOut: 0, plotY: 0,
       ys: null, standY: null, cabin: null, seat: 0, doorRef: null, sit: false, seatOf: null, side: 0, hold: 0, narrow: false, boarding: false, inView: true,
-      carry: null, bag: false, lamp: false, lx: null, ly: null, lz: null, _i: 0,
+      carry: null, bag: false, lamp: false, lx: null, ly: null, lz: null, _i: 0, lift: null, liftPts: null, liftWait: 0,
     };
     if (pts.length > 1) wk.heading = Math.atan2(pts[1][0] - pts[0][0], pts[1][1] - pts[0][1]);
     wk._n = this._made;
@@ -418,6 +423,119 @@ export class Agents {
   }
 
   _drop(wk) { this._unseat(wk); this.walkers.delete(wk); if (wk.r && wk.r.walk === wk) wk.r.walk = null; }
+
+  // ------------------------------------------------------------- lifts
+  // A tall gondola station's way up (b.stair) rises on the spot, in a glass
+  // lift (see gondolaWayUp): its car takes those waiting at its door up to
+  // the deck or down to the street, together, four at a time, each at a
+  // spot of their own in it (LIFT_SLOTS). Each has its
+  // car, parked at the foot to begin with, and the glass round its shaft
+  // and the car to draw (the station's model has the shaft's frame); found
+  // afresh now and then, as stations are built, rise or come down.
+  _syncLifts() {
+    const seen = new Set();
+    for (const b of this.world.buildings.values()) {
+      const st = b.stair;
+      if (!st || BUILDINGS[b.type].stop !== 'gondola') continue;
+      const i = st.findIndex((p, k) => k > 0 && k + 1 < st.length && Math.abs(st[k + 1].y - p.y) > 0.05 && Math.abs(st[k + 1].x - p.x) + Math.abs(st[k + 1].z - p.z) < 1e-4);
+      if (i < 0) continue;
+      const p = st[i], y0 = Math.min(p.y, st[i + 1].y), y1 = Math.max(p.y, st[i + 1].y);
+      let L = this.lifts.get(b.id);
+      if (L && (Math.abs(L.x - p.x) + Math.abs(L.z - p.z) > 1e-4 || Math.abs(L.y0 - y0) + Math.abs(L.y1 - y1) > 1e-4)) { this._dropLift(L); L = null; }
+      if (!L) this.lifts.set(b.id, this._makeLift(b.id, p.x, p.z, y0, y1, Math.atan2(p.x - st[i - 1].x, p.z - st[i - 1].z), LIFT.across[b.type] || LIFT.across.gondola));
+      seen.add(b.id);
+    }
+    for (const [id, L] of this.lifts) if (!seen.has(id)) this._dropLift(L);
+  }
+
+  // A lift at (x, z) from y0 up to y1, its shaft long along ry (the way in
+  // from its street end) and across wide: its car (y, its floor; dir, which
+  // way it goes; open, how long its doors stand open yet), those in it,
+  // those stepping in, who stands at each spot in it, and who has called it
+  // to the foot or the top this frame.
+  _makeLift(id, x, z, y0, y1, ry, across) {
+    const L = { id, x, z, y0, y1, ry, y: y0, dir: 0, open: 0, riders: [], coming: new Set(), slots: LIFT_SLOTS.map(() => null), call: [false, false], mesh: null, car: null };
+    const g = L.mesh = new THREE.Group();
+    g.position.set(x, 0, z);
+    g.rotation.y = ry;
+    L.car = new THREE.Mesh(LIFT_CAR[across] || (LIFT_CAR[across] = liftCarModel(across)), MAT.building);
+    L.car.position.y = y0;
+    L.car.castShadow = true;
+    g.add(L.car, new THREE.Mesh(liftGlass(y0 - 0.02, y1 + 0.17, across), MAT.glass));
+    this.game.renderer.scene.add(g);
+    return L;
+  }
+
+  _dropLift(L) {
+    this.lifts.delete(L.id);
+    this.game.renderer.scene.remove(L.mesh);
+    L.mesh.children[1].geometry.dispose();
+    for (const wk of [...L.riders, ...L.coming]) { wk.lift = null; wk.liftPts = null; }
+  }
+
+  // Whether a walker at a lift's door (the next stretch of their way a ride
+  // in it) may step into its car: it stands open at their floor, with a spot
+  // free in it, the furthest from the door first, which their way now goes
+  // to and rides from; or they call it there.
+  _liftIn(wk) {
+    if (wk.lift && wk.liftPts === wk.pts) return true;
+    const p = wk.pts[wk.seg + 1], y = wk.ys[wk.seg + 1];
+    let L = null;
+    for (const o of this.lifts.values()) if (Math.abs(o.x - p[0]) + Math.abs(o.z - p[1]) < 1e-3) { L = o; break; }
+    // (none known there yet, or not to their floor, the station having
+    // risen since they set off; or waited for too long: up the shaft as
+    // best they can)
+    if (!L || (Math.abs(y - L.y0) > 1e-3 && Math.abs(y - L.y1) > 1e-3) || wk.liftWait > LIFT_PATIENCE) { wk.liftWait = 0; return true; }
+    const k = L.slots.indexOf(null);
+    if (!L.dir && L.open > 0 && Math.abs(L.y - y) < 1e-3 && k >= 0) {
+      L.coming.add(wk);
+      L.slots[k] = wk;
+      wk.lift = L; wk.liftPts = wk.pts; wk.liftWait = 0;
+      const at = [L.x + Math.sin(L.ry) * LIFT_SLOTS[k], L.z + Math.cos(L.ry) * LIFT_SLOTS[k]];
+      wk.pts[wk.seg + 1] = at; wk.pts[wk.seg + 2] = at.slice();
+      return true;
+    }
+    L.call[Math.abs(y - L.y1) < Math.abs(y - L.y0) ? 1 : 0] = true;
+    return false;
+  }
+
+  // Each lift's car: it stands with its doors open at a floor while anyone
+  // steps out or in (till its doors close, and for those stepping in), then
+  // goes up or down with those in it, who step out at the other end; called
+  // empty to whoever waits at the other end; and stands where it is, its
+  // doors shut, while nobody wants it. t: game time.
+  _runLifts(t) {
+    const v = LIFT_SPEED * CONFIG.WALK_SPEED;
+    for (const L of this.lifts.values()) {
+      // (only those still on their way through it: not dropped, nor sent
+      // another way)
+      const mine = (wk) => this.walkers.has(wk) && wk.lift === L && wk.liftPts === wk.pts;
+      L.riders = L.riders.filter(wk => mine(wk) && liftSeg(wk, wk.seg));
+      for (const wk of L.coming) if (!mine(wk)) L.coming.delete(wk);
+      for (let k = 0; k < L.slots.length; k++) if (L.slots[k] && !L.riders.includes(L.slots[k]) && !L.coming.has(L.slots[k])) L.slots[k] = null;
+      if (L.dir) {
+        const goal = L.dir > 0 ? L.y1 : L.y0;
+        L.y += L.dir * v * t;
+        if ((L.y - goal) * L.dir >= 0) {
+          L.y = goal; L.dir = 0; L.open = LIFT_DOORS;
+          for (const wk of L.riders) { wk.seg++; wk.t = 0; wk.lift = null; wk.liftPts = null; }
+          L.riders.length = 0;
+          L.slots.fill(null);
+        }
+      } else if (L.open > 0) L.open -= t;
+      else if (!L.coming.size) {
+        const top = Math.abs(L.y - L.y1) < 1e-6 ? 1 : 0;
+        if (L.riders.length || L.call[1 - top]) L.dir = top ? -1 : 1;
+        else if (L.call[top]) L.open = LIFT_DOORS;
+      }
+      for (const wk of L.riders) {
+        const ya = wk.ys[wk.seg], yb = wk.ys[wk.seg + 1];
+        wk.t = Math.max(0, Math.min(1, (L.y - ya) / (yb - ya)));
+      }
+      L.car.position.y = L.y;
+      L.call[0] = L.call[1] = false;
+    }
+  }
 
   // ----------------------------------------------------------- the crowd
   // Villagers keep out of each other's way and out of the vehicles': after
@@ -931,10 +1049,24 @@ export class Agents {
     const move = dt * speed * CONFIG.WALK_SPEED;
     const night = this.game.env.night;
     this.lanterns.length = 0;
+    if (--this._liftScan <= 0) { this._liftScan = 30; this._syncLifts(); }
+    this._runLifts(dt * speed);
     for (const wk of [...this.walkers]) {
       if (wk.delay > 0) { wk.delay -= dt * speed; continue; }
       wk.lamp = false;
       if (wk.mode === 'path') {
+        // in a lift's car (see _runLifts), at their spot in it, facing the
+        // way out, carried up or down
+        const L = wk.lift && wk.liftPts === wk.pts ? wk.lift : null;
+        if (L && liftSeg(wk, wk.seg)) {
+          if (!L.riders.includes(wk)) { L.coming.delete(wk); L.riders.push(wk); }
+          const [x, z] = wk.pts[wk.seg], out = wk.pts[wk.seg + 2];
+          wk.x = x; wk.z = z;
+          if (out) wk.heading += angDiff(Math.atan2(out[0] - x, out[1] - z), wk.heading) * Math.min(1, dt * 12);
+          wk.y = walkY(w, wk);
+          wk.narrow = true; wk.moving = false;
+          continue;
+        }
         // nearly at the door, and the building has been redrawn since (its
         // door moved): on to where its door is now
         if (wk.doorRef && wk.seg >= wk.pts.length - wk.doorIn - 3 && wk.seg < wk.pts.length - wk.doorIn - 1) this._redoor(wk);
@@ -948,13 +1080,18 @@ export class Agents {
         // not into a vehicle's way, for as long as it takes
         const limit = inside(wk) ? Infinity : wk.narrow ? HOLD_NARROW : HOLD, people = wk.hold < limit;
         // (nobody sees those out of view; one getting into a cabin goes
-        // straight in, as it waits only so long)
-        const gap = wk.inView === false || wk.boarding ? Infinity : this._ahead(wk, people);
+        // straight in, as it waits only so long, and one into a lift's car)
+        const gap = wk.inView === false || wk.boarding || L ? Infinity : this._ahead(wk, people);
         if (gap < rem) { rem = Math.max(0, gap); if (rem === 0) wk.hold += dt * speed; }
         else if (people) wk.hold = 0;
         else if ((wk.hold += dt * speed) > limit + 1) wk.hold = 0;
         const want = rem;
+        let held = false;
         while (rem > 0 && wk.seg < wk.pts.length - 1) {
+          // (at a lift's door, in only once its car stands open for them: see
+          // _liftIn; and in its car, they ride)
+          if (wk.t === 0 && liftSeg(wk, wk.seg + 1) && !this._liftIn(wk)) { held = true; wk.liftWait += dt * speed; break; }
+          if (wk.lift && wk.liftPts === wk.pts && liftSeg(wk, wk.seg)) break;
           const a = wk.pts[wk.seg], b = wk.pts[wk.seg + 1];
           const dy = wk.ys && wk.ys[wk.seg] != null && wk.ys[wk.seg + 1] != null ? wk.ys[wk.seg + 1] - wk.ys[wk.seg] : 0;
           const L = Math.hypot(b[0] - a[0], b[1] - a[1], dy);
@@ -985,7 +1122,7 @@ export class Agents {
         if (Math.abs(b[0] - a[0]) + Math.abs(b[1] - a[1]) > 1e-4) wk.heading += angDiff(Math.atan2(b[0] - a[0], b[1] - a[1]), wk.heading) * Math.min(1, dt * 12);
         wk.y = walkY(w, wk);
         wk.phase += (want - rem) / strideLen(wk.lk.scale);
-        wk.moving = speed > 0;
+        wk.moving = speed > 0 && !held;
       } else if (wk.mode === 'wander') {
         wk.y = wk.baseY;
         if (wk.idle > 0) { wk.idle -= dt * speed; wk.moving = false; if (wk.working && speed) wk.phase += dt * speed * 4; continue; }
@@ -1205,6 +1342,41 @@ const CAR_PATIENCE = 30;
 // how long a villager waits behind someone before walking on regardless: on
 // a street, and somewhere narrow (a doorway's queue keeps moving, if slowly)
 const HOLD = 6, HOLD_NARROW = 25;
+// A gondola station's lift (see _runLifts): how fast its car goes, in
+// walking speeds; how long its doors stand open, in game seconds; and where
+// those in it stand, in a row along it from its far end (from its middle,
+// the way in from its street end), as many as it holds, a body's width and
+// more apart
+const LIFT_SPEED = 4, LIFT_DOORS = 1.2, LIFT_SLOTS = [0.135, 0.045, -0.045, -0.135];
+// (how long one waits at a lift's door, in game seconds, before going up the
+// shaft regardless: should it never come)
+const LIFT_PATIENCE = 120;
+// Is stretch i of a walker's way a ride in a lift (straight up or down, on
+// the spot)?
+const liftSeg = (wk, i) => !!wk.ys && i >= 0 && i + 1 < wk.pts.length && wk.ys[i] != null && wk.ys[i + 1] != null && Math.abs(wk.ys[i + 1] - wk.ys[i]) > 0.05 && Math.abs(wk.pts[i + 1][0] - wk.pts[i][0]) + Math.abs(wk.pts[i + 1][1] - wk.pts[i][1]) < 1e-4;
+// A lift's car (across wide, LIFT.long along it): a floor, a slim post at
+// each corner and halfway along each side, and a roof with two lights under
+// it, lit all night (its glass is the shaft's); and the glass round its
+// shaft, from its pit (y0) to the top of its frame (y1)
+const LIFT_CAR = {};
+function liftCarModel(across) {
+  const gb = new GeoBuilder(), a = across / 2 - 0.008, l = LIFT.long / 2 - 0.008;
+  gb.box(0, -0.014, 0, 2 * a, 0.014, 2 * l, '#5d6266');
+  for (const sx of [-1, 1]) for (const sz of [-1, 0, 1]) gb.box(sx * (a - 0.004), 0, sz * (l - 0.004), 0.008, 0.17, 0.008, '#c4cacd');
+  gb.box(0, 0.17, 0, 2 * a + 0.004, 0.014, 2 * l + 0.004, '#e3e5e4');
+  gb.glow(1.7, 1.2, 0.55, 3.1);
+  for (const sz of [-1, 1]) gb.box(0, 0.162, sz * l / 2, a, 0.008, l * 0.6, '#ffe9b8');
+  gb.noGlow();
+  return gb.build();
+}
+function liftGlass(y0, y1, across) {
+  const gb = new GeoBuilder(), a = across / 2, l = LIFT.long / 2;
+  for (const sd of [-1, 1]) {
+    gb.box(0, y0, sd * l, 2 * a - 0.012, y1 - y0, 0.003, '#ffffff');
+    gb.box(sd * a, y0, 0, 0.003, y1 - y0, 2 * l - 0.012, '#ffffff');
+  }
+  return gb.build();
+}
 const cellKey = (x, z) => Math.floor(x / CELL) * 65536 + Math.floor(z / CELL);
 // Is a walker still inside a building's walls (the step between a door and
 // the inside, in or out)?

@@ -394,6 +394,27 @@ function sweepCables(game, S, F) {
     }
     for (const h of hits.values()) F.add(`gondola ${h.what} through a building`, `${line.name} through the ${name(h.p.b)}`, `${at(h.x, h.z)} #${h.p.b.id}`);
   }
+  // and two lines' cables, wherever they pass near enough for their cabins
+  // to meet (a cabin's width apart, and a little) away from their stations:
+  // one over the other, room for a cabin and its hanger between
+  const lines = game.world.lines.filter(l => l.mode === 'gondola' && T.routes.get(l.id));
+  const ends = new Map(lines.map(l => [l, T._ends(l, l.stops.map(id => game.world.buildings.get(id)))]));
+  const nearEnd = (l, x, z) => ends.get(l).some(([ex, ez]) => Math.hypot(ex - x, ez - z) < 0.6);
+  for (let i = 0; i < lines.length; i++) for (let j = i + 1; j < lines.length; j++) {
+    const A = T.routes.get(lines[i].id), B = T.routes.get(lines[j].id);
+    let worst = Infinity, where = null;
+    A.pts.forEach(([x, z], p) => {
+      if (nearEnd(lines[i], x, z) || nearEnd(lines[j], x, z)) return;
+      for (let q = 0; q + 1 < B.pts.length; q++) {
+        const [cx, cz] = B.pts[q], [dx, dz] = B.pts[q + 1], ex = dx - cx, ez = dz - cz, L2 = ex * ex + ez * ez || 1e-9;
+        const t = Math.max(0, Math.min(1, ((x - cx) * ex + (z - cz) * ez) / L2));
+        if (Math.hypot(x - cx - ex * t, z - cz - ez * t) > CABIN.W + 0.02) continue;
+        const gap = Math.abs(A.ys[p] - (B.ys[q] + (B.ys[q + 1] - B.ys[q]) * t));
+        if (gap < worst) { worst = gap; where = [x, z]; }
+      }
+    });
+    if (worst < G_HANG + 0.08) F.add('gondola lines cross with no room for a cabin', `${lines[i].name} and ${lines[j].name}`, `${worst.toFixed(2)} apart at ${at(where[0], where[1])}`);
+  }
 }
 
 // Villagers, vehicles and villagers and vehicles running into each other,
@@ -586,7 +607,7 @@ function play(label, w) {
   const once = (wk, b) => { const k = (wk.r ? wk.r.id : 'g' + wk.lk.lane) + ':' + b.id; if (seen.has(k)) return false; seen.add(k); return true; };
   const start = w.day;
   let steps = 0, samples = 0;
-  const rode = new Set(), climbed = new Set(), sat = new Set();   // who rode a gondola, who climbed up to one, who sat down to wait
+  const rode = new Set(), climbed = new Set(), sat = new Set(), lifted = new Set();   // who rode a gondola, who climbed up to one, who sat down to wait, who rode a station's lift
   // villagers into each other (on the street, and in a doorway or on stairs
   // where they take turns), vehicles into each other, villagers into vehicles
   const bump = { street: 0, narrow: 0, pairs: 0, cars: new Map(), feet: 0, feetAt: null, carAt: null, streetAt: null };
@@ -609,6 +630,8 @@ function play(label, w) {
       if (wk.sit && wk.r) sat.add(wk.r.id);
       const onWay = wk.mode === 'path' && wk.ys && wk.ys[wk.seg] != null && wk.ys[wk.seg + 1] != null;
       if (onWay && wk.ys[wk.seg + 1] > wk.ys[wk.seg] + 0.05 && wk.r) climbed.add(wk.r.id);
+      if (wk.lift && wk.r && wk.lift.riders.includes(wk)) lifted.add(wk.r.id);
+      if (wk.liftWait > (bump.liftWait || 0)) { bump.liftWait = wk.liftWait; bump.liftAt = [wk.x, wk.z]; }
       const y = wk.mode === 'wander' ? wk.baseY : wk.y;
       let skip = null, where = wk.mode;
       if (wk.mode === 'path') {
@@ -669,6 +692,8 @@ function play(label, w) {
     if (st > 1 || na > 5) F.add('villagers walk into each other', `on the street ${st.toFixed(2)} and in doorways or on stairs ${na.toFixed(2)} in every thousand moments`, bump.streetAt ? at(bump.streetAt[0], bump.streetAt[1]) : '-', st > 10 || na > 30);
   }
   if (bump.feet) F.add('villagers inside a vehicle', `${bump.feet} moments, ${rate(bump.feet).toFixed(2)} in every thousand`, bump.feetAt ? at(bump.feetAt[0], bump.feetAt[1]) : '-', rate(bump.feet) > 1 && bump.feet > 40);
+  // (and nobody kept waiting at a lift's door: its car comes for them)
+  if (bump.liftWait > 60) F.add('villager kept waiting for a lift', `${bump.liftWait.toFixed(0)} s`, at(bump.liftAt[0], bump.liftAt[1]));
   if (bump.maxWait > 60) F.add('vehicles held up in traffic', `the longest ${bump.maxWait.toFixed(0)} s (${bump.maxWaitAt.line ? bump.maxWaitAt.line.name : 'a cart'}), ${bump.longWaits || 0} vehicle-moments over 20 s`, '-', false);
   if (VERBOSE) console.log(`      a step takes: the villagers ${(cost.agents / steps).toFixed(2)} ms, the vehicles ${(cost.transit / steps).toFixed(2)} ms`);
   if (VERBOSE && bump.whys) console.log('      held up over 20 s, waiting for: ' + [...bump.whys].sort((x, y) => y[1] - x[1]).map(([k, n]) => k + ' ' + n).join(' · '));
@@ -680,7 +705,7 @@ function play(label, w) {
   sweepCables(game, S, F);
   const secs = ((performance.now() - t0) / 1000).toFixed(1);
   const parts = [...S.byB.values()].reduce((n, l) => n + l.length, 0);
-  console.log(`${F.serious ? 'FAIL' : 'ok  '} ${label}: ${w.buildings.size} buildings (${parts} solid parts, models in ${(built / 1000).toFixed(1)} s) · ${w.population} villagers · ${game.world.lines.length} lines (${climbed.size} climbed to a gondola, ${rode.size} rode one in sight, ${sat.size} sat down to wait) · ${DAYS} days, ${samples} villager positions checked · ${secs} s`);
+  console.log(`${F.serious ? 'FAIL' : 'ok  '} ${label}: ${w.buildings.size} buildings (${parts} solid parts, models in ${(built / 1000).toFixed(1)} s) · ${w.population} villagers · ${game.world.lines.length} lines (${climbed.size} climbed to a gondola, ${lifted.size} in a lift, ${rode.size} rode one in sight, ${sat.size} sat down to wait) · ${DAYS} days, ${samples} villager positions checked · ${secs} s`);
   F.print('     ');
   return F.serious;
 }
