@@ -79,11 +79,16 @@ check('a corrupt or future save is left intact', () => {
 
 check('the route is isolated and the engine gates observer mutation', () => {
   const page = fs.readFileSync(path.join(ROOT, 'window/index.html'), 'utf8');
+  const play = fs.readFileSync(path.join(ROOT, 'play/index.html'), 'utf8');
   const css = fs.readFileSync(path.join(ROOT, 'window/window.css'), 'utf8');
   const game = fs.readFileSync(path.join(ROOT, 'src/game.js'), 'utf8');
   const input = fs.readFileSync(path.join(ROOT, 'src/ui/input.js'), 'utf8');
   assert.match(page, /src="\.\.\/src\/window\/main\.js"/);
   assert.match(page, /href="window\.css"/);
+  assert.match(page, /location\.protocol === 'file:'/);
+  assert.match(page, /fileProtocolNotice/);
+  assert.match(play, /location\.protocol === 'file:'/);
+  assert.match(play, /file-protocol-note/);
   assert.match(css, /pointer-events:\s*none/);
   assert.match(game, /this\.observer \? 'living-window\.settings\.v1'/);
   assert.match(game, /if \(this\.observer\) \{\s*const r = \{ ok: false, error: 'Living Window is read-only\.'/);

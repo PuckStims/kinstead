@@ -3,6 +3,11 @@
 `/window/` is a deliberately narrow, read-only view of one Kinstead town. It
 is not a second builder and it does not connect to multiplayer.
 
+It must be served over HTTP, not opened as a `file://` URL. From the project
+folder, run `powershell -ExecutionPolicy Bypass -File serve.ps1`, then open
+`http://localhost:8080/window/`. Both local routes show this instruction
+instead of inert controls when opened directly from disk.
+
 ## What opens
 
 - The first visit creates the same local town every time: a 44 x 44 hilly

@@ -22,6 +22,11 @@
   </script>
 </head>
 <body class="living-window">
+  <script>
+    // The observer is also an ES-module application, so a double-clicked
+    // HTML file cannot initialise it.  Show a useful local-start instruction.
+    if (location.protocol === 'file:') document.documentElement.classList.add('file-protocol');
+  </script>
   <div id="sky"></div>
   <canvas id="stars"></canvas>
   <div id="app"></div>
@@ -37,6 +42,12 @@
     </section>
     <div id="windowMessage" role="status" hidden></div>
   </main>
+  <aside id="fileProtocolNotice" role="alert">
+    <div class="window-eyebrow">Living Window</div>
+    <h1>Open this town through a local web server</h1>
+    <p>From the project folder, run <code>powershell -ExecutionPolicy Bypass -File serve.ps1</code>.</p>
+    <p>Then open <a href="http://localhost:8080/window/">http://localhost:8080/window/</a>.</p>
+  </aside>
 
   <div id="hud" class="hidden">
     <!-- badges, coins and labels over buildings: first, so every panel and menu covers them -->
