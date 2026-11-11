@@ -36,7 +36,7 @@ export class Game {
     this.THREE = THREE;
     this.renderer = new Renderer(document.getElementById('app'));
     this.sky = new Sky(this.renderer);
-    this.settings = { shadows: true, ao: true, pixelArt: true, pixelSize: 2, autosave: true, sound: true, popCoins: true, popToasts: true, popTips: true, popLabels: true, issuesOpen: true, music: true, musicVol: 0.5, tiltShift: 'off', tiltBand: 'normal', alwaysDay: false, camera: 'iso', fov: 45, v: 4, ...PERF_DEFAULTS };
+    this.settings = { shadows: true, ao: true, pixelArt: true, pixelSize: 2, peopleStyle: 'orbs', autosave: true, sound: true, popCoins: true, popToasts: true, popTips: true, popLabels: true, issuesOpen: true, music: true, musicVol: 0.5, tiltShift: 'off', tiltBand: 'normal', alwaysDay: false, camera: 'iso', fov: 45, v: 4, ...PERF_DEFAULTS };
     let saved = {};
     try { saved = JSON.parse(localStorage.getItem(SETTINGS_KEY) || '{}') || {}; } catch {}
     Object.assign(this.settings, saved);
@@ -500,6 +500,7 @@ export class Game {
 
   applySettings() {
     const s = this.settings;
+    this.agents?.setVisualMode(s.peopleStyle);
     this.renderer.setShadows(s.shadows, SHADOW_SIZE[s.shadowQuality] || SHADOW_SIZE.high);
     const gf = this.renderer.gfx, scale = s.resScale || 1, tilt = s.tiltShift === 'off' ? null : s.tiltShift;
     const persp = s.camera === 'perspective', fov = s.fov || 45;

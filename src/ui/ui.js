@@ -9,6 +9,7 @@ import { computeIssues } from './issues.js';
 import { BlockedIcons, workingHTML, needsNoteHTML, buryHTML, townRoadTiles } from './working.js';
 import { STYLES } from '../render/buildings.js';
 import { TRAITS, traitsOf, salaryOf, livingCostOf, pensionOf, wealthOf, relativesOf, friendsOf, yearsOf, eduOf, EDU, schoolingOf, familyOf, householdsIn } from '../sim/people.js';
+import { chromaticOf } from '../render/chromatic.js';
 // What keeps gondola lines locked: too few villagers, or Cable Cars not researched.
 const gondolaLock = (w) => w.unlockPop < TRANSIT.gondola.unlock ? TRANSIT.gondola.unlock : !w.hasTech('cablecars') ? `🔬 ${TECHS.cablecars.name}` : 0;
 // What feeds a home's happiness, and what to do about each.
@@ -45,7 +46,7 @@ import { roadSelTool, roadSelHTML, roadSelAct, bindRoadSel, dressAct, boulevardH
 import { roadRun } from '../world/roadEdit.js';
 import { boulevardTiles } from '../world/boulevard.js';
 import { perfHTML, bindPerf, readPerf, group, check, seg, segValue, bindSegs } from './perfSettings.js';
-import { minionIcon, MINION, MINIONS } from './minion.js';
+import { orbIcon, ORB, ORBS } from './orbIcon.js';
 
 const $ = (id) => document.getElementById(id);
 export const esc = (s) => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -71,8 +72,8 @@ const ICONS = {
   '🥕': 'nutrition', '🥩': 'kebab_dining', '👞': 'steps', '🧵': 'checkroom', '🔧': 'build', '💊': 'medication', '📖': 'menu_book',
   '☕': 'local_cafe', '🏦': 'savings', '✉': 'mail', '🏢': 'business_center', '🏬': 'local_mall', '🛝': 'toys', '🎾': 'sports_tennis', '⚽': 'sports_soccer',
 };
-// ...and people as little minions, like the villagers themselves (ui/minion.js).
-const SVG_ICONS = { '🧑': MINION, '🧒': MINION, '🧓': MINION, '👪': MINIONS };
+// ...and people as the same chromatic Orbs used in the world (ui/orbIcon.js).
+const SVG_ICONS = { '🧑': ORB, '🧒': ORB, '🧓': ORB, '👪': ORBS };
 const EMOJI_RE = new RegExp([...Object.keys(ICONS), ...Object.keys(SVG_ICONS)].join('|'), 'g');
 export function ico(html) {
   return String(html).replace(/️/g, '').replace(/🪙 ?/gu, '$$').replace(EMOJI_RE, (m) => `<span class="ms">${SVG_ICONS[m] || ICONS[m]}</span>`);
@@ -131,8 +132,8 @@ export class UI {
     $('showUI').onclick = () => this.setUIHidden(false);
     $('btnBudget').onclick = () => this.showBudget();
     $('btnPeople').onclick = () => this.showPeople();
-    // the townsfolk, as a pair of minions
-    for (const el of [$('pop').previousElementSibling, $('btnPeople').firstElementChild]) el.innerHTML = MINIONS;
+    // the townsfolk, as a small cluster of Orbs
+    for (const el of [$('pop').previousElementSibling, $('btnPeople').firstElementChild]) el.innerHTML = ORBS;
     const insp = $('inspector');
     // where it was dragged to (on a smaller screen it is brought back on when it opens)
     try { const p = JSON.parse(localStorage.getItem('hearthvale.win.inspector') || 'null'); if (p) { insp.style.left = `${p.x}px`; insp.style.top = `${p.y}px`; insp.style.right = 'auto'; } } catch {}
@@ -647,7 +648,7 @@ export class UI {
         h += `<div class="sec"><h5>${many ? `${fams.size} households` : 'Household'}</h5>`;
         for (const members of fams.values()) {
           if (many) h += `<div class="hh">The ${esc(members[0].last)} ${members.length > 1 ? 'family' : 'household'} <span class="muted">· ${members.length}</span></div>`;
-          h += `<div class="chips">${members.map(r => `<span class="chip link" data-act="resident" data-id="${r.id}">${minionIcon(r)} ${esc(r.first)} <i>${Math.floor(yearsOf(r))}</i></span>`).join('')}</div>`;
+          h += `<div class="chips">${members.map(r => `<span class="chip link" data-act="resident" data-id="${r.id}">${orbIcon(r)} ${esc(r.first)} <i>${Math.floor(yearsOf(r))}</i></span>`).join('')}</div>`;
         }
         h += '</div>';
       }
@@ -775,7 +776,8 @@ export class UI {
     const moodE = mood >= 75 ? '😄' : mood >= 55 ? '🙂' : mood >= 40 ? '😐' : '😟';
     let work = job ? `<span class="chip link" data-act="building" data-id="${job.id}">${esc(BUILDINGS[job.type].levels[job.level].name)}</span>` :
       (r.age === 'adult' ? 'Looking for work' : r.age === 'child' ? 'Student' : 'Retired');
-    let h = `<div class="head"><div class="big">${minionIcon(r)}</div><div><h3>${esc(r.first)} ${esc(r.last)}</h3><div class="sub">${age}, ${Math.floor(yearsOf(r))} · ${moodE} ${mood}%</div></div></div>`;
+    const chroma = chromaticOf(r);
+    let h = `<div class="head"><div class="big">${orbIcon(r)}</div><div><h3>${esc(r.first)} ${esc(r.last)}</h3><div class="sub">${age}, ${Math.floor(yearsOf(r))} · ${moodE} ${mood}%</div></div></div>`;
     h += `<div class="sec"><div class="row"><span>Now</span><b>${esc(ag.activity(r))}</b></div>`;
     h += `<div class="row"><span>Home</span><b>${home ? `<span class="chip link" data-act="building" data-id="${home.id}">${esc(BUILDINGS[home.type].levels[home.level].name)}</span>` : 'Homeless'}</b></div>`;
     h += `<div class="row"><span>Work</span><b>${work}</b></div>`;
@@ -805,8 +807,11 @@ export class UI {
     const traits = traitsOf(r);
     h += `<div class="sec"><h5>Personality</h5><div class="chips">${traits.map(t => `<span class="chip" title="${esc(TRAITS[t].desc)}">${esc(TRAITS[t].name)}</span>`).join('')}</div>`;
     h += `<div class="note">${traits.map(t => esc(TRAITS[t].desc)).join('. ')}.</div></div>`;
+    h += `<div class="sec"><h5>Chromatic Orb</h5><div class="row"><span>Identity core</span><b>${esc(chroma.identity.name)}</b></div>`;
+    h += `<div class="row"><span>Trait wisps</span><b>${chroma.accents.length ? chroma.accents.map(a => esc(`${a.display} · ${a.name}`)).join('<br>') : 'Neutral fallback'}</b></div>`;
+    h += `<div class="note">Core color is a permanent visual identity. Wisps repeat the personality traits above; brightness follows the existing ${mood}% modeled-wellbeing score. Color never changes this resident's behavior.</div></div>`;
     const rel = relativesOf(w, r), friends = friendsOf(w, r);
-    const link = (o, label) => `<span class="chip link" data-act="resident" data-id="${o.id}">${minionIcon(o)} ${esc(o.first)}${o.last !== r.last ? ' ' + esc(o.last[0]) + '.' : ''} <i>${label}</i></span>`;
+    const link = (o, label) => `<span class="chip link" data-act="resident" data-id="${o.id}">${orbIcon(o)} ${esc(o.first)}${o.last !== r.last ? ' ' + esc(o.last[0]) + '.' : ''} <i>${label}</i></span>`;
     if (rel.length) h += `<div class="sec"><h5>Family</h5><div class="chips">${rel.map(x => link(x.r, x.role)).join('')}</div></div>`;
     h += `<div class="sec"><h5>Friends</h5><div class="chips">${friends.length ? friends.map(x => link(x.r, x.ctx)).join('') : '<span class="muted">Keeps to themselves</span>'}</div></div>`;
     h += `<div class="actions"><button class="btn ${this.game.follow === r.id ? 'gold' : 'primary'}" data-act="follow">${this.game.follow === r.id ? '◉ Following' : '🎥 Follow'}</button><button class="btn" data-act="people">👪 All villagers</button></div>`;
@@ -1397,6 +1402,7 @@ export class UI {
     const s = g.settings;
     const town = g.world && !g.demo, guest = !!g.isGuest, sb = town ? g.world.sandbox : {};
     const display = group('Display', `
+      ${seg('stPeopleStyle', 'Villager style', [['orbs', 'Orbs', 'Soft chromatic Orbs'], ['minions', 'Minions', 'Original characters']], s.peopleStyle || 'orbs')}
       ${check('stPix', s.pixelArt, 'Pixel-art look', 'Drawn small with outlines, then scaled up crisply')}
       ${seg('stPixSize', 'Pixel size', [[1, '1×', 'Finest'], [2, '2×', 'Classic'], [3, '3×', 'Chunky'], [4, '4×', 'Retro']], s.pixelSize || 2)}
       ${check('stAO', s.ao, 'Soft contact shadows', 'Ambient occlusion: shade where walls meet the ground')}
@@ -1441,6 +1447,7 @@ export class UI {
       syncDisplay();
       const apply = (e) => {
         readPerf(c, s);
+        s.peopleStyle = segValue(c, 'stPeopleStyle');
         s.pixelArt = val('stPix').checked;
         s.pixelSize = Number(segValue(c, 'stPixSize'));
         s.ao = val('stAO').checked;
@@ -1832,7 +1839,7 @@ export class UI {
         const total = list.length;
         list = list.slice(0, 400);
         c.querySelector('#pplN').textContent = total > 400 ? `showing 400 of ${fmt(total)}` : `${fmt(total)} shown`;
-        body.innerHTML = ico(list.map(x => `<tr data-id="${x.r.id}"><td>${minionIcon(x.r)} ${esc(x.name)}</td><td class="num">${Math.floor(x.years)}</td><td>${EDU[x.edu]}</td><td>${esc(x.home) || '—'}</td><td>${x.school ? (x.school.ok ? esc(x.school.text) : '<span class="bad">No school place</span>') : x.job ? esc(x.job) : '<span class="bad">Looking for work</span>'}</td>` +
+        body.innerHTML = ico(list.map(x => `<tr data-id="${x.r.id}"><td>${orbIcon(x.r)} ${esc(x.name)}</td><td class="num">${Math.floor(x.years)}</td><td>${EDU[x.edu]}</td><td>${esc(x.home) || '—'}</td><td>${x.school ? (x.school.ok ? esc(x.school.text) : '<span class="bad">No school place</span>') : x.job ? esc(x.job) : '<span class="bad">Looking for work</span>'}</td>` +
           `<td class="num">${x.pay ? '$' + x.pay.toFixed(1) : '—'}</td><td class="num ${x.wealth != null && x.wealth < 0 ? 'bad' : ''}">${x.wealth == null ? '—' : (x.wealth < 0 ? '−$' : '$') + fmt(Math.abs(x.wealth))}</td><td class="num">${x.mood}%</td><td class="traits">${x.traits.map(t => TRAITS[t].name).join(', ')}</td></tr>`).join(''));
         for (const th of c.querySelectorAll('th')) th.querySelector('.sort').textContent = th.dataset.k === st.k ? (st.dir > 0 ? ' ▲' : ' ▼') : '';
       };

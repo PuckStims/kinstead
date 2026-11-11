@@ -9,12 +9,14 @@ import { tilePolyline } from './path.js';
 import { curvesAt } from '../world/roadShape.js';
 import { workArea, LIFT } from '../render/buildings.js';
 import { VillagerView, lookOf, dressOf, carryFrom, strideLen } from '../render/villagers.js';
+import { OrbView } from '../render/orbs.js';
 import { traitsOf } from './people.js';
 import { plotGrid, plotPath, stepsGrid, stepAt, openAt } from './plotNav.js';
 import { GeoBuilder } from '../render/geo.js';
 import { MAT } from '../render/materials.js';
 
-// How villagers look and are drawn lives in render/villagers.js.
+// Movement-supporting look data remains in render/villagers.js. The visible
+// renderer may be Living Window Orbs or the legacy Minions.
 export { lookOf };
 
 // The kind of outing a building is for, or null if villagers don't visit it
@@ -104,7 +106,9 @@ export class Agents {
     this.walkers = new Set();
     this.plannedDay = -1;
     const scene = game.renderer.scene;
-    this.view = new VillagerView(scene, CONFIG.MAX_AGENTS);
+    this.view = null;
+    this.visualMode = null;
+    this.setVisualMode(game.settings && game.settings.peopleStyle);
     this._grids = new WeakMap();   // a drawn model → the way about its plot (plotNav)
     this._stairs = new WeakMap();  // a drawn model → the steps up to its door
     this._seated = new Map();      // a bench seat at a gondola station → who has it
@@ -120,6 +124,18 @@ export class Agents {
     this.selected = null;
     for (const r of this.world.residents.values()) this._initResident(r);
     this.lanterns = [];
+  }
+
+  // Presentation-only hot swap. Walkers and every resident field stay in
+  // place, so changing this setting cannot restart or redirect anyone.
+  setVisualMode(mode) {
+    const next = mode === 'minions' ? 'minions' : 'orbs';
+    if (this.view && this.visualMode === next) return;
+    if (this.view) this.view.dispose();
+    this.visualMode = next;
+    this.view = next === 'minions'
+      ? new VillagerView(this.game.renderer.scene, CONFIG.MAX_AGENTS)
+      : new OrbView(this.game.renderer.scene, CONFIG.MAX_AGENTS);
   }
 
   _initResident(r) {
