@@ -291,7 +291,11 @@ table.budget tr.tot td { border-bottom: 0; font-weight: 700; background: #e8e8e8
 .orb-swatches.identities { grid-template-columns: repeat(4, 1fr); }
 .orb-swatches.traits { grid-template-columns: repeat(3, 1fr); }
 .orb-swatch { min-width: 0; display: grid; grid-template-columns: 24px 1fr; gap: 6px; align-items: center; padding: 4px 6px; background: #fff; box-shadow: var(--field); }
-.orb-swatch > i { width: 22px; height: 22px; border-radius: 50%; background: radial-gradient(circle at 32% 28%, #fff 0 7%, var(--orb-color) 44%, color-mix(in srgb, var(--orb-color), #27343a 22%) 100%); box-shadow: 0 0 5px color-mix(in srgb, var(--orb-color), transparent 45%); }
+.orb-swatch > .orb-core-mark { width: 22px; height: 22px; border-radius: 50%; background: radial-gradient(circle at 32% 28%, #fff 0 7%, var(--orb-color) 44%, color-mix(in srgb, var(--orb-color), #27343a 22%) 100%); box-shadow: 0 0 5px color-mix(in srgb, var(--orb-color), transparent 45%); }
+.orb-swatch > .wisp-mark { width: 24px; height: 22px; display: grid; place-items: center; color: var(--orb-color); filter: drop-shadow(0 0 2px color-mix(in srgb, var(--orb-color), transparent 35%)); }
+.orb-swatch > .wisp-mark svg { width: 28px; height: 24px; overflow: visible; }
+.orb-swatch > .wisp-mark path { fill: none; stroke: currentColor; stroke-width: 2.35; stroke-linecap: round; stroke-linejoin: round; }
+.orb-swatch > .wisp-mark path + path { opacity: .7; stroke-width: 1.8; }
 .orb-swatch b, .orb-swatch small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .orb-swatch b { font-size: 11px; }
 .orb-swatch small { margin-top: 1px; color: var(--ink-2); font-size: 10px; }
