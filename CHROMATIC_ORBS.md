@@ -49,6 +49,20 @@ The renderer only reads walker position and activity flags. Selection, picking, 
 
 [`src/ui/orbIcon.js`](src/ui/orbIcon.js) uses the same mapping for static SVG portraits and generic population clusters.
 
+### Camera-distance reveal
+
+World Orbs use a fixed, logarithmic camera-closeness scale internally. It is presentation-only—not a setting, resident property, or saved value—and the same apparent world scale produces the same detail on every supported map size and in both camera projections.
+
+| Closeness | Orb treatment |
+| --- | --- |
+| 0–39% | Calm monochromatic identity silhouette |
+| 40–60% | Trait accents fade in smoothly and become clearly readable |
+| 60–74% | Full accent colour held close to the identity core |
+| 75–90% | Mantle and separate trait wisps gently expand |
+| 90–100% | Full close-range circulation and breathing detail |
+
+All boundaries are smooth interpolation bands rather than model switches. Zoom therefore feels like revealing more of the same resident, with no visual popping and no effect on picking or collision size.
+
 ## Compatibility contract
 
 `lookOf()`, `dressOf()`, `carryFrom()`, and `strideLen()` remain in [`src/render/villagers.js`](src/render/villagers.js). `Agents` still uses their scale, lane, speed, stride, clothing/carry metadata, and the existing `draw(walkers, env, camera)` handoff. The legacy `VillagerView` and Minion assets remain available as the visual fallback.

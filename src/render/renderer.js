@@ -17,6 +17,15 @@ const QUARTER = Math.PI / 2, ISO_BASE = Math.PI / 4;
 const DIST = 140;
 // how close the camera can come: near enough to see a villager's face
 const MAX_ZOOM = 24;
+// A fixed presentation scale from the furthest supported 80-tile valley to
+// the closest view. Unlike a map-relative percentage, the same value always
+// means the same apparent world scale, so visual LOD thresholds stay stable.
+const DETAIL_MIN_ZOOM = 0.45 * 48 / 80;
+export function zoomClosenessOf(zoom) {
+  const z = Number.isFinite(zoom) && zoom > 0 ? zoom : DETAIL_MIN_ZOOM;
+  const t = Math.log(z / DETAIL_MIN_ZOOM) / Math.log(MAX_ZOOM / DETAIL_MIN_ZOOM);
+  return Math.max(0, Math.min(100, t * 100));
+}
 const _lx = new THREE.Vector3(), _ly = new THREE.Vector3(), _c = new THREE.Vector3(), _lz = new THREE.Vector3();
 const _back = new THREE.Vector3(), _corner = new THREE.Vector3(), _ndc = new THREE.Vector2(), _ray = new THREE.Raycaster();
 const _plane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0), _hit = new THREE.Vector3();
@@ -468,6 +477,10 @@ export class Renderer {
     this.eye.copy(cam.position);
     // (for sizing things by their distance: see Particles)
     cam.userData.dist = cam.position.distanceTo(t);
+    // Presentation-only camera detail. It is deliberately neither a setting
+    // nor save data; views such as Orbs can reveal detail without knowing the
+    // current map size or changing their existing draw interface.
+    cam.userData.zoomCloseness = zoomClosenessOf(rig.zoom);
     cam.up.set(-Math.sin(a), 0, -Math.cos(a));
     if (e < 1.2) cam.up.set(0, 1, 0);
     cam.lookAt(t);
