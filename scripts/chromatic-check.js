@@ -5,6 +5,7 @@ import { IDENTITY_PALETTE, TRAIT_PALETTE, chromaticOf, identityOf, luminosityOf 
 import { ORB_DETAIL_STOPS, OrbView, orbActivityOf, orbDetailAt } from '../src/render/orbs.js';
 import { zoomClosenessOf } from '../src/render/renderer.js';
 import { orbIcon } from '../src/ui/orbIcon.js';
+import { orbLegendHTML } from '../src/ui/orbLegend.js';
 
 let failures = 0;
 const ok = (cond, msg) => { if (cond) console.log('ok  ', msg); else { failures++; console.error('FAIL', msg); } };
@@ -88,6 +89,11 @@ ok(farWispScale === 0 && closeWispScale > 1, 'trait wisps are monochromatic at d
 ok(JSON.stringify({ x: walker.x, y: walker.y, z: walker.z, heading: walker.heading, moving: walker.moving, mode: walker.mode, speedK: walker.speedK }) === movementBefore, 'drawing an Orb does not change movement state');
 const svg = orbIcon(resident);
 ok(svg.includes(first.identity.hex) && first.accents.every(a => svg.includes(a.hex)), 'the SVG portrait uses the same identity and trait colors as the world Orb');
+const legend = orbLegendHTML();
+ok(IDENTITY_PALETTE.every(color => legend.includes(color.name) && legend.includes(color.hex)), 'the legend contains every canonical identity family');
+ok(Object.values(TRAIT_PALETTE).every(color => legend.includes(color.display) && legend.includes(color.name) && legend.includes(color.hex)), 'the legend contains every canonical personality accent');
+ok(Object.values(ORB_DETAIL_STOPS).every(stop => legend.includes(`data-detail-at="${stop}"`))
+  && !/<(?:button|input|select|textarea)\b/i.test(legend), 'the legend follows the Orb detail thresholds and is non-interactive');
 const owned = scene.children.length;
 view.dispose();
 ok(owned === 7 && scene.children.length === 0, 'OrbView creates and disposes all shared rendering resources');

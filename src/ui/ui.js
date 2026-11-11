@@ -47,6 +47,7 @@ import { roadRun } from '../world/roadEdit.js';
 import { boulevardTiles } from '../world/boulevard.js';
 import { perfHTML, bindPerf, readPerf, group, check, seg, segValue, bindSegs } from './perfSettings.js';
 import { orbIcon, ORB, ORBS } from './orbIcon.js';
+import { orbLegendHTML } from './orbLegend.js';
 
 const $ = (id) => document.getElementById(id);
 export const esc = (s) => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -132,6 +133,7 @@ export class UI {
     $('showUI').onclick = () => this.setUIHidden(false);
     $('btnBudget').onclick = () => this.showBudget();
     $('btnPeople').onclick = () => this.showPeople();
+    $('btnOrbLegend').onclick = () => this.showOrbLegend();
     // the townsfolk, as a small cluster of Orbs
     for (const el of [$('pop').previousElementSibling, $('btnPeople').firstElementChild]) el.innerHTML = ORBS;
     const insp = $('inspector');
@@ -1892,6 +1894,10 @@ export class UI {
         5. When the town grows, link 🚏 coach stops into lines, or lay 🛤️ track between 🚉 stations.<br>
         6. Save to this browser or to a file from 💾.
       </div></div>`);
+  }
+
+  showOrbLegend() {
+    this.openModal(orbLegendHTML(), (c) => c.classList.add('orb-legend-win'));
   }
 }
 
