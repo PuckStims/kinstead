@@ -49,6 +49,8 @@ The renderer only reads walker position and activity flags. Selection, picking, 
 
 [`src/ui/orbIcon.js`](src/ui/orbIcon.js) uses the same mapping for static SVG portraits and generic population clusters.
 
+The palette button beside the Villagers button opens a compact, non-interactive legend generated directly from the canonical identity palette, trait palette and camera-detail landmarks. It also restates the activity mapping, modeled-wellbeing limitation and text-accessibility contract for new players.
+
 ### Camera-distance reveal
 
 World Orbs use a fixed, logarithmic camera-closeness scale internally. It is presentation-only—not a setting, resident property, or saved value—and the same apparent world scale produces the same detail on every supported map size and in both camera projections.

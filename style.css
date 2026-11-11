@@ -272,6 +272,48 @@ table.budget tr.tot td { border-bottom: 0; font-weight: 700; background: #e8e8e8
 .line-item { display: grid; grid-template-columns: 14px 1fr auto; gap: 10px; align-items: center; padding: 6px 8px; background: #fff; box-shadow: var(--field); }
 .line-item .dot { width: 14px; height: 14px; box-shadow: var(--field); }
 
+/* Chromatic Orb reference: deliberately compact, read-only and source-backed. */
+.modal-card.orb-legend-win { width: min(780px, calc(100vw - 16px)); }
+.orb-legend-intro { display: grid; grid-template-columns: 132px 1fr; gap: 12px; align-items: center; }
+.orb-legend-demo { width: 112px; height: 112px; margin: auto; position: relative; }
+.orb-legend-demo i { position: absolute; display: block; border-radius: 50%; }
+.orb-legend-demo .halo { inset: 0; background: radial-gradient(circle, rgba(103,201,192,.3) 0, rgba(103,201,192,.12) 42%, transparent 72%); }
+.orb-legend-demo .core { inset: 25px; background: radial-gradient(circle at 32% 27%, #f4ffff 0 8%, #67c9c0 38%, #4fafa3 76%, rgba(79,175,163,.45) 100%); box-shadow: 0 0 12px rgba(103,201,192,.55); }
+.orb-legend-demo .wisp { left: 21px; top: 36px; width: 70px; height: 38px; border: 4px solid #f2c14e; border-right-color: transparent; transform: rotate(24deg); opacity: .72; }
+.orb-legend-demo .wisp.two { top: 34px; border-color: #66b96d transparent #66b96d #66b96d; transform: rotate(-31deg); }
+.orb-channels { display: grid; gap: 4px; font-size: 12px; }
+.orb-channels > div { display: grid; grid-template-columns: 9.3em 1fr; gap: 7px; line-height: 1.3; }
+.orb-channels span, .orb-legend-section > p { color: var(--ink-2); }
+.orb-legend-section { margin-top: 11px; }
+.orb-legend-section h3 { margin: 0 0 3px; font-size: 13px; color: var(--navy); }
+.orb-legend-section > p { margin: 0 0 6px; font-size: 12px; line-height: 1.35; }
+.orb-swatches { display: grid; gap: 4px; }
+.orb-swatches.identities { grid-template-columns: repeat(4, 1fr); }
+.orb-swatches.traits { grid-template-columns: repeat(3, 1fr); }
+.orb-swatch { min-width: 0; display: grid; grid-template-columns: 24px 1fr; gap: 6px; align-items: center; padding: 4px 6px; background: #fff; box-shadow: var(--field); }
+.orb-swatch > i { width: 22px; height: 22px; border-radius: 50%; background: radial-gradient(circle at 32% 28%, #fff 0 7%, var(--orb-color) 44%, color-mix(in srgb, var(--orb-color), #27343a 22%) 100%); box-shadow: 0 0 5px color-mix(in srgb, var(--orb-color), transparent 45%); }
+.orb-swatch b, .orb-swatch small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.orb-swatch b { font-size: 11px; }
+.orb-swatch small { margin-top: 1px; color: var(--ink-2); font-size: 10px; }
+.orb-zoom-flow { display: grid; grid-template-columns: repeat(6, 1fr); gap: 4px; }
+.orb-zoom-stage { min-width: 0; padding: 5px 6px; background: linear-gradient(135deg, #fff, #e7f4f1); box-shadow: var(--field); font-size: 11px; line-height: 1.25; }
+.orb-zoom-stage b, .orb-zoom-stage span { display: block; }
+.orb-zoom-stage span { margin-top: 2px; color: var(--ink-2); }
+.orb-activity-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; }
+.orb-activity-grid > div { padding: 4px 6px; background: #fff; box-shadow: var(--field); font-size: 11px; line-height: 1.25; }
+.orb-activity-grid b, .orb-activity-grid span { display: block; }
+.orb-activity-grid span { color: var(--ink-2); }
+.orb-legend-note { margin: 11px 0 0; }
+@media (max-width: 680px) {
+  .orb-legend-intro { grid-template-columns: 1fr; }
+  .orb-legend-demo { width: 92px; height: 92px; }
+  .orb-legend-demo .core { inset: 20px; }
+  .orb-legend-demo .wisp { left: 17px; top: 29px; width: 58px; height: 32px; }
+  .orb-swatches.identities, .orb-swatches.traits { grid-template-columns: repeat(2, 1fr); }
+  .orb-zoom-flow { grid-template-columns: 1fr; }
+  .orb-activity-grid { grid-template-columns: repeat(2, 1fr); }
+}
+
 /* --------------------------------------------------------- title screen */
 .title-screen { position: fixed; inset: 0; z-index: 40; display: flex; align-items: center; justify-content: center; pointer-events: none; }
 .title-card { pointer-events: auto; text-align: center; padding: 0 18px 14px; width: min(420px, calc(100vw - 32px)); max-height: calc(100vh - 16px); max-height: calc(100dvh - 16px); overflow-y: auto; }
