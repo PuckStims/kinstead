@@ -9,13 +9,15 @@ const esc = (value) => String(value).replace(/[&<>"']/g, c => ({
 
 const identitySwatches = () => IDENTITY_PALETTE.map(color => `
   <div class="orb-swatch" title="${esc(color.hex)}">
-    <i style="--orb-color:${esc(color.hex)}" aria-hidden="true"></i>
-    <span><b>${esc(color.name)}</b><small>Identity ${esc(color.id)}</small></span>
+    <i class="orb-core-mark" style="--orb-color:${esc(color.hex)}" aria-hidden="true"></i>
+    <span><b>${esc(color.name)}</b><small>Permanent core · ${esc(color.hex)}</small></span>
   </div>`).join('');
 
 const traitSwatches = () => Object.values(TRAIT_PALETTE).map(color => `
   <div class="orb-swatch trait" title="${esc(color.hex)}">
-    <i style="--orb-color:${esc(color.hex)}" aria-hidden="true"></i>
+    <i class="wisp-mark" style="--orb-color:${esc(color.hex)}" aria-hidden="true">
+      <svg viewBox="0 0 28 24"><path d="M2 15C5 5 18 3 25 10c-7-1-13 2-17 8"/><path d="M5 21c5-6 13-7 19-3"/></svg>
+    </i>
     <span><b>${esc(color.display)}</b><small>${esc(color.name)}</small></span>
   </div>`).join('');
 

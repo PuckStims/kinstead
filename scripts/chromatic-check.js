@@ -92,6 +92,11 @@ ok(svg.includes(first.identity.hex) && first.accents.every(a => svg.includes(a.h
 const legend = orbLegendHTML();
 ok(IDENTITY_PALETTE.every(color => legend.includes(color.name) && legend.includes(color.hex)), 'the legend contains every canonical identity family');
 ok(Object.values(TRAIT_PALETTE).every(color => legend.includes(color.display) && legend.includes(color.name) && legend.includes(color.hex)), 'the legend contains every canonical personality accent');
+ok((legend.match(/class="orb-core-mark"/g) || []).length === IDENTITY_PALETTE.length
+  && (legend.match(/class="wisp-mark"/g) || []).length === Object.keys(TRAIT_PALETTE).length,
+  'the legend distinguishes identity cores from personality wisps');
+ok(IDENTITY_PALETTE.every(color => legend.includes(`Permanent core · ${color.hex}`))
+  && !/Identity \d\d/.test(legend), 'identity-family labels explain that core colors are not traits');
 ok(Object.values(ORB_DETAIL_STOPS).every(stop => legend.includes(`data-detail-at="${stop}"`))
   && !/<(?:button|input|select|textarea)\b/i.test(legend), 'the legend follows the Orb detail thresholds and is non-interactive');
 const owned = scene.children.length;
