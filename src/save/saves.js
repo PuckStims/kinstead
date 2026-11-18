@@ -46,7 +46,8 @@ export function serialize(world) {
     // diagonal streets (older saves have none)
     ...(world.diagN ? { diag: toB64(world.diag.map((v, i) => (world.roads[i] ? v : 0))) } : {}),
     ...(world.fieldTiles && world.fieldTiles.size ? { fields: [...world.fieldTiles].map(([id, tiles]) => [id, ...tiles]) } : {}),
-    buildings: [...world.buildings.values()].map(b => [b.id, b.type, b.level, b.x, b.z, b.variant, b.rot, b.built, b.w ?? b.size, b.d ?? b.size, b.flavor || null, b.con || null, b.leases && b.leases.length ? b.leases : null, b.look || null, b.spare ? [b.spare.w, b.spare.d, ...(b.spare.sx != null ? [b.spare.sx, b.spare.sz] : [])] : null, ...(b.pose ? [poseRec(b)] : [])]),
+    buildings: [...world.buildings.values()].map(b => [b.id, b.type, b.level, b.x, b.z, b.variant, b.rot, b.built, b.w ?? b.size, b.d ?? b.size, b.flavor || null, b.con || null, b.leases && b.leases.length ? b.leases : null, b.look || null, b.spare ? [b.spare.w, b.spare.d, ...(b.spare.sx != null ? [b.spare.sx, b.spare.sz] : [])] : null,
+      ...(b.protection ? [b.pose ? poseRec(b) : null, b.protection] : b.pose ? [poseRec(b)] : [])]),
     trees,
     residents: [...world.residents.values()].map(r => [r.id, r.first, r.last, r.age, r.home ?? -1, r.job ?? -1, r.look, r.wealth ?? null, r.fam ?? null, r.years != null ? Math.round(r.years * 100) / 100 : null, r.edu ?? null, r.edYrs ?? null]),
     lines: world.lines.map(l => ({ id: l.id, mode: l.mode, name: l.name, color: l.color, stops: l.stops.slice(), vehicles: l.vehicles })),
@@ -76,10 +77,10 @@ export function deserialize(data) {
   if (typeof data.diag === 'string') { w.diag.set(fromB64(data.diag).subarray(0, N * N)); tidyDiag(w); }
   const tr = data.trees || [];
   for (let i = 0; i + 4 < tr.length; i += 5) w.addTree(tr[i] / 100, tr[i + 1] / 100, tr[i + 2], tr[i + 3] / 100, tr[i + 4] / 100);
-  for (let [id, type, level, x, z, variant, rot, built, bw, bd, flavor, con, leases, look, spare, pose] of data.buildings) {
+  for (let [id, type, level, x, z, variant, rot, built, bw, bd, flavor, con, leases, look, spare, pose, protection] of data.buildings) {
     if (type === 'house' && level >= 2) [type, level] = level === 2 ? ['flats', 0] : ['villa', level - 2];
     if (!hasKey(BUILDINGS, type)) continue;
-    w.restoreBuilding({ id, type, level, x, z, variant, rot, built, w: bw, d: bd, flavor, con, leases, look, spare, pose });
+    w.restoreBuilding({ id, type, level, x, z, variant, rot, built, w: bw, d: bd, flavor, con, leases, look, spare, pose, protection });
   }
   const oldEdu = (data.state && data.state.eduScale) !== 5;
   for (const [id, first, last, age, home, job, look, wealth, fam, years, edu, edYrs] of data.residents) {

@@ -136,6 +136,10 @@ export const COMMANDS = {
     check: (w, c) => int(c.id),
     run: (g, c) => g.world.demolishBuilding(c.id),
   },
+  protect: {
+    check: (w, c) => int(c.id) && ['protected', 'preserve', 'unrestricted'].includes(c.protection),
+    run: (g, c) => g.world.setProtection(c.id, c.protection),
+  },
   // put a building site first (or back in line) for the builders
   priority: {
     check: (w, c) => int(c.id) && typeof c.on === 'boolean',

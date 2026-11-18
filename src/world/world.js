@@ -442,6 +442,7 @@ export class World {
       happiness: o.happiness ?? 60, factors: o.factors ?? null,
       con: null,
     };
+    if (o.protection === 'protected' || o.protection === 'preserve') b.protection = o.protection;
     // turned or nudged on its plot (see pose.js): as asked, or as it stood
     const p = cleanPose(o.pose || (o.yaw ? [o.yaw, 0, 0] : null));
     if (p) b.pose = p;
@@ -999,6 +1000,7 @@ export class World {
     const nb = this._record(b.type, x, z, chk, {
       w: fw(b), d: fd(b), level: b.level, variant: b.variant, flavor: b.flavor, look: b.look, accessIndex: opts.accessIndex,
       happiness: b.happiness, factors: b.factors, pose: b.pose,
+      protection: b.protection,
     });
     if (b.spare) nb.spare = { ...b.spare };
     this._occupy(nb);
@@ -1056,6 +1058,7 @@ export class World {
     const homes = capOf(a, 'housing') + capOf(o, 'housing');
     const nb = this._record(opt.type, x, z, { access, rail: null, minH, maxH }, {
       w, d, level: opt.level, variant: opt.base.variant, flavor: opt.flavor, look: opt.base.look, happiness: opt.base.happiness, factors: opt.base.factors,
+      protection: a.protection === 'protected' || o.protection === 'protected' ? 'protected' : a.protection === 'preserve' || o.protection === 'preserve' ? 'preserve' : null,
     });
     this.money -= opt.cost;
     this._retarget(a.id, nb.id);
@@ -1100,6 +1103,7 @@ export class World {
 
   _joinFarm(opt) {
     const { farm, house } = opt;
+    const protection = farm.protection === 'protected' || house.protection === 'protected' ? 'protected' : farm.protection === 'preserve' || house.protection === 'preserve' ? 'preserve' : null;
     const people = house.residents.length;
     this.money -= opt.cost;
     this._retarget(house.id, farm.id);
@@ -1107,6 +1111,7 @@ export class World {
     this._detach(house);
     farm.type = opt.type;
     farm.level = opt.level;
+    if (protection) farm.protection = protection; else delete farm.protection;
     this.emit('building:change', farm);
     this._shrunk(farm, people);
     return { ok: true, building: farm, cost: opt.cost, farmJoin: true };
@@ -1128,6 +1133,7 @@ export class World {
       rot: rec.rot, variant: rec.variant, access: null, rail: null, baseY: floorHeight(this.terrain, rec.type, rec.x, rec.z, w, d, rec.rot, minH, maxH), minY: minH, built: rec.built || 1,
       residents: [], workers: [], connected: false, happiness: 60, factors: null,
     };
+    if (rec.protection === 'protected' || rec.protection === 'preserve') b.protection = rec.protection;
     const spare = spareOf(rec.spare, w, d);
     if (spare) { b.spare = spare; setFloor(this.terrain, b); }
     const pose = spare ? null : cleanPose(rec.pose);
@@ -1139,6 +1145,18 @@ export class World {
       for (const l of b.leases) e[l.side] = l.buyer ? l.amt : -l.amt;
     }
     this.buildings.set(b.id, b);
+  }
+
+  // A player's preservation request constrains municipal automation, while
+  // leaving ordinary manual building tools unchanged.
+  setProtection(id, protection) {
+    const b = this.buildings.get(id);
+    if (!b) return { ok: false, reason: 'That building is gone' };
+    if (protection === 'unrestricted') delete b.protection;
+    else if (protection === 'protected' || protection === 'preserve') b.protection = protection;
+    else return { ok: false, reason: 'Unknown preservation designation' };
+    this.emit('building:change', b);
+    return { ok: true, building: b };
   }
 
   // What a building can become next: its next level, or at the top level

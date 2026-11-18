@@ -26,11 +26,11 @@ function conRec(c) {
 }
 
 // One building as [id, type, level, x, z, variant, rot, built, w, d, flavor,
-// con, leases, look, access, spare, pose] — the save's record plus the
+// con, leases, look, access, spare, pose, protection] — the save's record plus the
 // entrance in use.
 export function buildingRec(b) {
   return [b.id, b.type, b.level, b.x, b.z, b.variant, b.rot, b.built, fw(b), fd(b), b.flavor || null,
-    b.con ? conRec(b.con) : null, b.leases && b.leases.length ? b.leases : null, b.look || null, b.access ? [b.access.x, b.access.z] : null, b.spare ? [b.spare.w, b.spare.d, ...(b.spare.sx != null ? [b.spare.sx, b.spare.sz] : [])] : null, poseRec(b)];
+    b.con ? conRec(b.con) : null, b.leases && b.leases.length ? b.leases : null, b.look || null, b.access ? [b.access.x, b.access.z] : null, b.spare ? [b.spare.w, b.spare.d, ...(b.spare.sx != null ? [b.spare.sx, b.spare.sz] : [])] : null, poseRec(b), b.protection || null];
 }
 
 // One villager: the save's record plus their school place.
@@ -284,13 +284,13 @@ export function applyDelta(game, d) {
   const added = [], changed = [], refit = [], done = [];
   let railLinks = rails;
   for (const rec of d.b || []) {
-    const [id, type, level, x, z, variant, rot, built, bw, bd, flavor, con, leases, look, acc, sp, ps] = rec;
+    const [id, type, level, x, z, variant, rot, built, bw, bd, flavor, con, leases, look, acc, sp, ps, protection] = rec;
     const spare = spareOf(sp, bw, bd), pose = spare ? null : cleanPose(ps);
     if (!hasKey(BUILDINGS, type)) continue;
     const def = BUILDINGS[type];
     let b = w.buildings.get(id);
     if (!b) {
-      w.restoreBuilding({ id, type, level, x, z, variant, rot, built, w: bw, d: bd, flavor, con, leases, look, spare, pose });
+      w.restoreBuilding({ id, type, level, x, z, variant, rot, built, w: bw, d: bd, flavor, con, leases, look, spare, pose, protection });
       b = w.buildings.get(id);
       if (!b) continue;
       b.access = acc ? { x: acc[0], z: acc[1] } : null;
@@ -303,7 +303,7 @@ export function applyDelta(game, d) {
     const prev = b.con;
     const looks = moved || b.type !== type || b.level !== level || (b.look || null) !== look || (b.flavor || null) !== flavor
       || b.variant !== variant || b.rot !== rot || conLook(prev) !== conLook(con) || JSON.stringify(b.pose || null) !== JSON.stringify(pose)
-      || JSON.stringify(b.spare || null) !== JSON.stringify(spare || null);
+      || JSON.stringify(b.spare || null) !== JSON.stringify(spare || null) || (b.protection || null) !== (protection || null);
     if (moved) {
       setFootprint(w, b, -1);
       b.x = x; b.z = z; b.w = bw; b.d = bd; b.size = Math.max(bw, bd);
@@ -315,6 +315,7 @@ export function applyDelta(game, d) {
     const spared = JSON.stringify(b.spare || null) !== JSON.stringify(spare || null);
     if (spared) simDirty = true;
     Object.assign(b, { type, level, variant, rot, built, flavor, look });
+    if (protection === 'protected' || protection === 'preserve') b.protection = protection; else delete b.protection;
     if (spare) b.spare = spare; else delete b.spare;
     if (pose) b.pose = pose; else delete b.pose;
     // the floor, once the plot and the part the building stands on are known
