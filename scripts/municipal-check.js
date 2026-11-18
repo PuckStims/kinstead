@@ -8,7 +8,7 @@ import { serialize, deserialize } from '../src/save/saves.js';
 import { runCommand } from '../src/commands.js';
 import { inspectTownSummary, inspectActiveIssues, inspectBuilding, inspectEducationPipeline, findConstructionSites, findRedevelopmentSites } from '../src/municipal/diagnostics.js';
 import { cleanMunicipalConfig, getOpenRouterKey, setOpenRouterKey, saveMunicipalConfig, redactSecret } from '../src/municipal/config.js';
-import { validateInterventionPlan } from '../src/municipal/plan.js';
+import { SUBMIT_PLAN_TOOL, validateInterventionPlan } from '../src/municipal/plan.js';
 import { runMunicipalAgent } from '../src/municipal/openrouter.js';
 import { executeAuthorizedActions } from '../src/municipal/controller.js';
 
@@ -103,6 +103,51 @@ try {
   await runMunicipalAgent({ key: 'sk-or-v1-test', model: 'test', system: 'test', initial: 'test', tools: [], executeTool: () => summary, limits: { requestLimit: 2, toolRoundLimit: 5, tokenLimit: 256, timeoutMs: 5000 }, fetchImpl: repeatingFetch });
 } catch (e) { bounded = e.code === 'request_limit'; }
 ok(bounded && calls === 2, 'an unproductive agent stops at the configured API-request limit');
+
+// Routed providers can return an error envelope with HTTP 200. Surface its
+// actual explanation instead of collapsing it to “no assistant message”.
+const providerErrorFetch = async () => ({ ok: true, status: 200, statusText: 'OK', json: async () => ({ error: { message: 'No eligible tool-capable provider' } }) });
+let providerError = null;
+try {
+  await runMunicipalAgent({ key: 'sk-or-v1-test', model: 'test', system: 'test', initial: 'test', tools: [], executeTool: () => ({}), limits: { requestLimit: 1, toolRoundLimit: 1, tokenLimit: 256, timeoutMs: 5000 }, fetchImpl: providerErrorFetch });
+} catch (e) { providerError = e; }
+ok(providerError?.message.includes('No eligible tool-capable provider'), 'provider error envelopes preserve their useful explanation');
+
+// An intermittent empty routed response is retried without consuming a tool
+// round, while every attempt still counts against the API-request limit.
+let intermittentCalls = 0;
+const intermittentFetch = async () => ++intermittentCalls === 1
+  ? ({ ok: true, json: async () => ({ choices: [] }) })
+  : ({ ok: true, json: async () => ({ choices: [{ message: { content: null, tool_calls: [{ id: 'after-retry', type: 'function', function: { name: 'submit_intervention_plan', arguments: JSON.stringify({ title: 'Recovered', summary: 'The retry succeeded.', causes: [], actions: [], naturalProgression: [], unresolved: [] }) } }] } }] }) });
+const intermittent = await runMunicipalAgent({ key: 'sk-or-v1-test', model: 'test', system: 'test', initial: 'test', tools: [SUBMIT_PLAN_TOOL], executeTool: () => summary, limits: { requestLimit: 3, toolRoundLimit: 3, tokenLimit: 256, timeoutMs: 5000 }, fetchImpl: intermittentFetch });
+ok(intermittent.plan.title === 'Recovered' && intermittent.requests === 2 && intermittent.rounds === 1, 'an intermittent empty routed response is retried within the hard request budget');
+
+// A model may investigate correctly and then conclude in prose instead of
+// using the submission tool. Preserve the investigation and request bounded
+// JSON rather than throwing it away.
+let proseCalls = 0;
+const proseConclusionFetch = async () => {
+  const n = ++proseCalls;
+  if (n === 1) return { ok: true, json: async () => ({ choices: [{ message: { content: null, tool_calls: [{ id: 'inspect-before-prose', type: 'function', function: { name: 'inspect_town_summary', arguments: '{}' } }] } }] }) };
+  if (n === 2) return { ok: true, json: async () => ({ choices: [{ message: { content: 'The town should wait for current students to graduate.' } }] }) };
+  return { ok: true, json: async () => ({ choices: [{ message: { content: '{"title":"Wait for graduates","summary":"Existing capacity should mature first.","causes":[],"actions":[],"naturalProgression":["Allow current students to graduate."],"unresolved":[]}' } }] }) };
+};
+const proseConclusion = await runMunicipalAgent({ key: 'sk-or-v1-test', model: 'test', system: 'test', initial: 'test', tools: [SUBMIT_PLAN_TOOL], executeTool: () => summary, limits: { requestLimit: 4, toolRoundLimit: 4, tokenLimit: 256, timeoutMs: 5000 }, fetchImpl: proseConclusionFetch });
+ok(proseConclusion.plan.title === 'Wait for graduates' && proseConclusion.requests === 3, 'a prose conclusion after real investigation is converted into a bounded final plan');
+
+// Some routed providers return an empty response for a named forced tool call.
+// The last round therefore exposes only a relaxed submit tool, then falls back
+// once to plain JSON while the local validation boundary remains unchanged.
+let finalRequests = 0, finalShape = null, fallbackShape = null;
+const compatibleFinalFetch = async (_url, opts) => {
+  const body = JSON.parse(opts.body), n = ++finalRequests;
+  if (n === 1) return { ok: true, json: async () => ({ choices: [{ message: { content: null, tool_calls: [{ id: 'inspect-first', type: 'function', function: { name: 'inspect_town_summary', arguments: '{}' } }] } }] }) };
+  if (n === 2) { finalShape = body; return { ok: true, json: async () => ({ choices: [] }) }; }
+  fallbackShape = body;
+  return { ok: true, json: async () => ({ choices: [{ message: { content: '```json\n{"title":"Bounded conclusion","summary":"Investigation complete.","causes":[],"actions":[],"naturalProgression":[],"unresolved":[]}\n```' } }] }) };
+};
+const compatibleFinal = await runMunicipalAgent({ key: 'sk-or-v1-test', model: 'test', system: 'test', initial: 'test', tools: [SUBMIT_PLAN_TOOL], executeTool: () => summary, limits: { requestLimit: 3, toolRoundLimit: 2, tokenLimit: 256, timeoutMs: 5000 }, fetchImpl: compatibleFinalFetch });
+ok(compatibleFinal.plan.title === 'Bounded conclusion' && finalShape.tools.length === 1 && finalShape.tools[0].function.name === 'submit_intervention_plan' && finalShape.tools[0].function.strict == null && finalShape.tool_choice === 'auto' && fallbackShape.tools == null, 'the last round tolerates empty forced-tool responses and still produces a bounded locally validated plan');
 
 // A submitted plan ends the loop without executing or exposing mutation tools.
 const submittedFetch = async () => ({ ok: true, json: async () => ({ choices: [{ message: { content: null, tool_calls: [{ id: 'final', type: 'function', function: { name: 'submit_intervention_plan', arguments: JSON.stringify({ title: 'Wait', summary: 'Capacity is adequate.', causes: [], actions: [], naturalProgression: ['Allow current pupils to graduate.'], unresolved: [] }) } }] } }] }) });
