@@ -100,7 +100,7 @@ function differences(a, b) {
   for (const x of A.buildings.values()) {
     const y = B.buildings.get(x.id);
     if (!y) { add(`building ${x.id} (${x.type}) missing`); continue; }
-    const k = (o) => JSON.stringify([o.type, o.level, o.x, o.z, fw(o), fd(o), o.rot, o.diag || 0, o.pose || null, o.curve || 0, o.look || null, o.flavor || null, o.variant, o.access, !!o.connected, o.front || 0, o.leases && o.leases.length ? o.leases : null,
+    const k = (o) => JSON.stringify([o.type, o.level, o.x, o.z, fw(o), fd(o), o.rot, o.diag || 0, o.pose || null, o.curve || 0, o.look || null, o.flavor || null, o.protection || null, o.variant, o.access, !!o.connected, o.front || 0, o.leases && o.leases.length ? o.leases : null,
       o.con ? [o.con.kind, o.con.to, o.con.toType, o.con.wait || null] : null]);
     if (k(x) !== k(y)) add(`building ${x.id} differs: ${k(x)} vs ${k(y)}`);
     else if (x.con && Math.abs(x.con.done - y.con.done) > 0.02) add(`site ${x.id} progress ${x.con.done} vs ${y.con.done}`);
@@ -418,6 +418,11 @@ let ended = null;
   }
   // demolish
   const victim = [...hw.buildings.values()].find(b => b.type === 'house' && !b.con && b.residents.length);
+  const preserve = await ask(guest, { t: 'protect', id: victim.id, protection: 'preserve' });
+  await until(() => gw().buildings.get(victim.id)?.protection === 'preserve');
+  ok(preserve.ok && hw.buildings.get(victim.id).protection === 'preserve' && gw().buildings.get(victim.id)?.protection === 'preserve', 'a guest marks a building Preserve if Possible, and everyone sees it');
+  await ask(guest, { t: 'protect', id: victim.id, protection: 'unrestricted' });
+  await until(() => !gw().buildings.get(victim.id)?.protection);
   const dm = await ask(guest, { t: 'demolish', id: victim.id });
   ok(dm.ok && !gw().buildings.has(victim.id), 'a guest demolishes a house');
   host.cmd({ t: 'sandbox', opts: { instantBuild: false } });

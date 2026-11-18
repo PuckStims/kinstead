@@ -15,7 +15,13 @@ export function computeIssues(game) {
   const w = game.world, sim = game.sim;
   if (!w || !sim) return [];
   const out = [];
-  const add = (sev, icon, text, act = null) => out.push({ sev, icon, text, act });
+  // A count may change while the same underlying condition persists. Keep a
+  // compact stable id so Municipal Intelligence can compare before/after
+  // assessments without treating every changed number as a different issue.
+  const add = (sev, icon, text, act = null) => {
+    const stem = text.toLowerCase().replace(/\d+(?:\.\d+)?/g, '#').replace(/[^a-z#]+/g, '-').replace(/^-|-$/g, '').slice(0, 72);
+    out.push({ id: `${icon}-${stem}`, sev, icon, text, act });
+  };
   const plural = (n, one, many = one + 's') => `${n} ${n === 1 ? one : many}`;
   const homes = [...w.buildings.values()].filter(b => BUILDINGS[b.type].levels[b.level].housing && isOpen(b));
   const U = sim.utility;

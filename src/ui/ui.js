@@ -48,6 +48,7 @@ import { boulevardTiles } from '../world/boulevard.js';
 import { perfHTML, bindPerf, readPerf, group, check, seg, segValue, bindSegs } from './perfSettings.js';
 import { orbIcon, ORB, ORBS } from './orbIcon.js';
 import { orbLegendHTML } from './orbLegend.js';
+import { showMunicipal } from './municipal.js';
 
 const $ = (id) => document.getElementById(id);
 export const esc = (s) => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -134,6 +135,7 @@ export class UI {
     $('btnBudget').onclick = () => this.showBudget();
     $('btnPeople').onclick = () => this.showPeople();
     $('btnOrbLegend').onclick = () => this.showOrbLegend();
+    $('btnCatchUp').onclick = () => showMunicipal(this);
     // the townsfolk, as a small cluster of Orbs
     for (const el of [$('pop').previousElementSibling, $('btnPeople').firstElementChild]) el.innerHTML = ORBS;
     const insp = $('inspector');
@@ -736,6 +738,10 @@ export class UI {
         + btn('fwd', 'arrow_downward', 'Nudge it towards the street', p.z >= NUDGE - 1e-6) + btn('back', 'arrow_upward', 'Nudge it back from the street', p.z <= -NUDGE + 1e-6)
         + `<button class="btn" data-act="pose" data-op="square" ${b.pose ? '' : 'disabled'} title="Square it up to its street again">Square up</button></div></div>`;
     }
+    const protection = b.protection || 'unrestricted';
+    h += `<div class="sec preservation"><h5><span class="ms">shield_lock</span> Municipal preservation</h5><div class="note">Guides Catch Up redevelopment; your manual building tools remain available.</div><div class="seg">${[
+      ['unrestricted', 'Unrestricted'], ['preserve', 'Preserve if possible'], ['protected', 'Protected landmark'],
+    ].map(([k, label]) => `<button class="${protection === k ? 'on' : ''}" data-act="protect" data-protection="${k}">${label}</button>`).join('')}</div></div>`;
     h += `<div class="actions">`;
     if (!b.con) h += w.hasTech('relocation')
       ? `<button class="btn" data-act="move" title="Builders take it down, cart the materials over and rebuild it">↔ Move · ${fmt(w.moveCost(b))}</button>`
@@ -960,6 +966,16 @@ export class UI {
           g.sfx('demolish');
           if (r.instant) { if (this.selection === sel) this.inspect(null); }
           else { this.toast('A demolition crew is on its way; the people inside have moved out', 'info', '🏗️'); if (this.selection) this.renderInspector(true); }
+        });
+        break;
+      }
+      case 'protect': {
+        const b = w.buildings.get(sel.id);
+        if (!b) break;
+        g.cmd({ t: 'protect', id: b.id, protection: data.protection }, (r) => {
+          if (!r.ok) this.toast(r.reason || 'Could not change preservation status', 'bad');
+          else this.toast(data.protection === 'protected' ? 'Protected Landmark' : data.protection === 'preserve' ? 'Catch Up will preserve it if possible' : 'Available for municipal redevelopment', 'info', '🛡');
+          this.renderInspector(true);
         });
         break;
       }
@@ -1281,7 +1297,7 @@ export class UI {
     if (!list.length) h += `<div class="empty">No saves in this browser yet.</div>`;
     h += `<div class="saves">${list.map(e => `<div class="save">
       ${e.thumb ? `<img src="${e.thumb}" alt="">` : '<div class="ph">🏡</div>'}
-      <div><div class="t">${esc(e.name)} ${e.id === 'autosave' ? '<span class="chip">Autosave</span>' : e.id === 'previous' ? '<span class="chip">Previous town</span>' : ''}</div>
+      <div><div class="t">${esc(e.name)} ${e.id === 'autosave' ? '<span class="chip">Autosave</span>' : e.id === 'previous' ? '<span class="chip">Previous town</span>' : e.id === 'municipal-checkpoint' ? '<span class="chip">Catch Up checkpoint</span>' : ''}</div>
       <div class="m">Day ${e.day} · ${fmt(e.pop)} villagers · $${typeof e.money === "number" ? fmt(e.money) : e.money}</div><div class="m">${new Date(e.savedAt).toLocaleString()}</div></div>
       <div class="acts"><button class="btn small primary" data-load="${e.id}">Load</button>
       ${inGame && e.id !== 'autosave' && e.id !== 'previous' ? `<button class="btn small" data-over="${e.id}">Overwrite</button>` : ''}
